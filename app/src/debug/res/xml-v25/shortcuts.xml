@@ -30,4 +30,14 @@
             android:targetClass="com.darkxvenom.airbeats.MainActivity"
             android:targetPackage="com.darkxvenom.airbeats.debug" />
     </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/mic"
+        android:shortcutId="music_recognition"
+        android:shortcutShortLabel="@string/identify_music">
+        <intent
+            android:action="com.darkxvenom.airbeats.action.MUSIC_RECOGNITION"
+            android:targetClass="com.darkxvenom.airbeats.MainActivity"
+            android:targetPackage="com.darkxvenom.airbeats.debug" />
+    </shortcut>
 </shortcuts>

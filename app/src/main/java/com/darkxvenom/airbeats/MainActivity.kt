@@ -246,6 +246,8 @@ import com.darkxvenom.airbeats.ui.menu.YouTubeSongMenu
 import com.darkxvenom.airbeats.ui.player.BottomSheetPlayer
 import com.darkxvenom.airbeats.ui.screens.HomeScreen
 import com.darkxvenom.airbeats.ui.screens.Screens
+import com.darkxvenom.airbeats.ui.screens.musicrecognition.ACTION_MUSIC_RECOGNITION
+import com.darkxvenom.airbeats.ui.screens.musicrecognition.openMusicRecognition
 import com.darkxvenom.airbeats.ui.screens.navigationBuilder
 import com.darkxvenom.airbeats.ui.screens.search.LocalSearchScreen
 import com.darkxvenom.airbeats.ui.screens.search.OnlineSearchScreen
@@ -340,6 +342,7 @@ class MainActivity : FragmentActivity() {
         }
 
     private var latestVersionName by mutableStateOf<String>(BuildConfig.VERSION_NAME)
+    private val pendingIntentFlow = kotlinx.coroutines.flow.MutableStateFlow<Intent?>(null)
 
     override fun onStart() {
         super.onStart()
@@ -416,6 +419,7 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         lastFmAuthCallbackCoordinator.capture(intent)
+        pendingIntentFlow.value = intent
     }
 
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
@@ -423,6 +427,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+        pendingIntentFlow.value = intent
         lastFmAuthCallbackCoordinator.capture(intent)
 
         // 🔔 Notification permission
@@ -1969,6 +1974,32 @@ class MainActivity : FragmentActivity() {
                                     onConfirm = { start, end -> ringtoneViewModel.setAsRingtone(this@MainActivity, start, end) }
                                 )
 
+                                val currentPendingIntent by pendingIntentFlow.collectAsState()
+
+                                LaunchedEffect(currentPendingIntent) {
+                                    val targetIntent = currentPendingIntent ?: return@LaunchedEffect
+                                    when (targetIntent.action) {
+                                        ACTION_MUSIC_RECOGNITION -> {
+                                            navController.openMusicRecognition()
+                                            pendingIntentFlow.value = null
+                                        }
+                                        ACTION_SEARCH -> {
+                                            openSearchImmediately = true
+                                            pendingIntentFlow.value = null
+                                        }
+                                        ACTION_LIBRARY -> {
+                                            val libIndex = navigationItems.indexOf(Screens.Library)
+                                            if (libIndex >= 0) rootPagerState.animateScrollToPage(libIndex)
+                                            pendingIntentFlow.value = null
+                                        }
+                                        ACTION_EXPLORE -> {
+                                            val expIndex = navigationItems.indexOf(Screens.Explore)
+                                            if (expIndex >= 0) rootPagerState.animateScrollToPage(expIndex)
+                                            pendingIntentFlow.value = null
+                                        }
+                                    }
+                                }
+
                                 if (ringtoneUiState.showProgress) {
                                     RingtoneProgressDialog(
                                         isVisible = ringtoneUiState.showProgress,
@@ -2066,6 +2097,7 @@ class MainActivity : FragmentActivity() {
         const val ACTION_SEARCH = "com.darkxvenom.airbeats.action.SEARCH"
         const val ACTION_EXPLORE = "com.darkxvenom.airbeats.action.EXPLORE"
         const val ACTION_LIBRARY = "com.darkxvenom.airbeats.action.LIBRARY"
+        const val ACTION_MUSIC_RECOGNITION = "com.darkxvenom.airbeats.action.MUSIC_RECOGNITION"
     }
 }
 

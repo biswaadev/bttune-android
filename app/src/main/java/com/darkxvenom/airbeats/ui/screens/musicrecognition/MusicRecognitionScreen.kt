@@ -11,6 +11,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -234,6 +235,46 @@ fun MusicRecognitionScreen(
                                 painter = painterResource(R.drawable.arrow_back),
                                 contentDescription = stringResource(R.string.back),
                             )
+                        }
+                    }
+                },
+                actions = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Surface(
+                            modifier =
+                                Modifier
+                                    .padding(horizontal = 8.dp)
+                                    .size(40.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            onClick = {
+                                val statusBarManager =
+                                    context.getSystemService(android.app.StatusBarManager::class.java)
+                                statusBarManager?.requestAddTileService(
+                                    android.content.ComponentName(
+                                        context,
+                                        com.darkxvenom.airbeats.service.MusicRecognitionTileService::class.java,
+                                    ),
+                                    context.getString(R.string.identify_music),
+                                    android.graphics.drawable.Icon.createWithResource(context, R.drawable.mic),
+                                    context.mainExecutor,
+                                ) { result ->
+                                    if (result == android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            context.getString(R.string.quick_settings_tile_added),
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    painter = painterResource(R.drawable.add),
+                                    contentDescription = stringResource(R.string.quick_settings_add_tile),
+                                )
+                            }
                         }
                     }
                 },

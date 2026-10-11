@@ -1081,6 +1081,9 @@
     <string name="preset_30s">30s Clip</string>
     <string name="preset_45s">45s</string>
     <string name="preset_60s">60s</string>
+    <string name="quick_settings_music_recognition_subtitle">Tap to identify music</string>
+    <string name="quick_settings_add_tile">Add Identify Music to Quick Settings</string>
+    <string name="quick_settings_tile_added">Tile added to Quick Settings!</string>
 </resources>
 
 

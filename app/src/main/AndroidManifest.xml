@@ -138,6 +138,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
+            <!-- Music Recognition Intent Filter -->
+            <intent-filter>
+                <action android:name="com.darkxvenom.airbeats.action.MUSIC_RECOGNITION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
             <!-- Last.fm web auth callback -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -428,6 +434,21 @@
                 <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+        </service>
+
+        <!-- Quick Settings Tile for Music Recognition (Identify Music) -->
+        <service
+            android:name=".service.MusicRecognitionTileService"
+            android:icon="@drawable/mic"
+            android:label="@string/identify_music"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
         </service>
 
         <receiver
