@@ -13,7 +13,10 @@ import com.darkxvenom.airbeats.extensions.toMediaItem
 import com.darkxvenom.airbeats.playback.MusicService
 import com.darkxvenom.airbeats.playback.PlayerConnection
 import com.darkxvenom.airbeats.playback.queues.ListQueue
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,6 +28,8 @@ import timber.log.Timber
  */
 class ShuffleTileService : TileService() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onStartListening() {
         super.onStartListening()
         updateTileState()
@@ -35,6 +40,11 @@ class ShuffleTileService : TileService() {
         updateTileState()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
+    }
+
     private fun updateTileState() {
         qsTile?.let { tile ->
             val isPlaying = PlayerConnection.instance?.isPlaying?.value == true ||
@@ -43,7 +53,7 @@ class ShuffleTileService : TileService() {
             tile.label = getString(R.string.shuffle)
             if (isPlaying) {
                 tile.state = Tile.STATE_ACTIVE
-                val currentTitle = PlayerConnection.instance?.currentMetadata?.value?.title
+                val currentTitle = PlayerConnection.instance?.mediaMetadata?.value?.title
                     ?: MusicService.instance?.player?.currentMediaItem?.mediaMetadata?.title?.toString()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     tile.subtitle = currentTitle?.ifBlank { null } ?: getString(R.string.shuffle_playing)
@@ -117,7 +127,7 @@ class ShuffleTileService : TileService() {
             updateTileState()
         } else {
             // Queue is empty: load library or liked songs, shuffle them, and play!
-            service.scope.launch(Dispatchers.IO) {
+            serviceScope.launch {
                 try {
                     val songs = service.database.songsByPlayTimeAsc().firstOrNull()
                         ?: service.database.likedSongsByRowIdAsc().firstOrNull()
