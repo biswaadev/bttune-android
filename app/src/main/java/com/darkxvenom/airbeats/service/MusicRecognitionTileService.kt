@@ -5,9 +5,8 @@ import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import com.darkxvenom.airbeats.MainActivity
 import com.darkxvenom.airbeats.R
-import com.darkxvenom.airbeats.ui.screens.musicrecognition.ACTION_MUSIC_RECOGNITION
+import com.darkxvenom.airbeats.ui.screens.musicrecognition.MusicRecognitionTrampolineActivity
 
 class MusicRecognitionTileService : TileService() {
 
@@ -35,11 +34,11 @@ class MusicRecognitionTileService : TileService() {
     override fun onClick() {
         super.onClick()
 
-        val intent = Intent(this, MainActivity::class.java).apply {
-            action = ACTION_MUSIC_RECOGNITION
+        val intent = Intent(this, MusicRecognitionTrampolineActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION
         }
 
         val launchAction = Runnable {

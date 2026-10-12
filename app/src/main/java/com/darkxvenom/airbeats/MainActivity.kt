@@ -1984,7 +1984,12 @@ class MainActivity : FragmentActivity() {
                                             pendingIntentFlow.value = null
                                         }
                                         ACTION_SEARCH -> {
-                                            openSearchImmediately = true
+                                            val query = targetIntent.getStringExtra("search_query")
+                                            if (!query.isNullOrBlank()) {
+                                                navController.navigate("search/${java.net.URLEncoder.encode(query, "UTF-8")}")
+                                            } else {
+                                                openSearchImmediately = true
+                                            }
                                             pendingIntentFlow.value = null
                                         }
                                         ACTION_LIBRARY -> {
