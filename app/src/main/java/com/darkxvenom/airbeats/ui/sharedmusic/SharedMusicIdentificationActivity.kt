@@ -76,11 +76,20 @@ class SharedMusicIdentificationActivity : ComponentActivity() {
              .onFailure { Timber.e(it, "Failed to bind MusicService") }
         }
 
-        val sharedContents = ShareIntentParser.parse(this, intent)
-        val initialContent: SharedContent? = sharedContents.firstOrNull()
-
-        if (initialContent != null) {
-            viewModel.processSharedContent(initialContent)
+        val identifiedTitle = intent.getStringExtra(EXTRA_IDENTIFIED_TITLE)
+        val initialContent: SharedContent? = if (!identifiedTitle.isNullOrBlank()) {
+            val artist = intent.getStringExtra(EXTRA_IDENTIFIED_ARTIST)
+            val album = intent.getStringExtra(EXTRA_IDENTIFIED_ALBUM)
+            val artUrl = intent.getStringExtra(EXTRA_IDENTIFIED_ART_URL)
+            viewModel.loadIdentifiedSong(identifiedTitle, artist, album, artUrl)
+            null
+        } else {
+            val sharedContents = ShareIntentParser.parse(this, intent)
+            val content = sharedContents.firstOrNull()
+            if (content != null) {
+                viewModel.processSharedContent(content)
+            }
+            content
         }
 
         setContent {
@@ -112,11 +121,26 @@ class SharedMusicIdentificationActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val sharedContents = ShareIntentParser.parse(this, intent)
-        val initialContent: SharedContent? = sharedContents.firstOrNull()
-        if (initialContent != null) {
-            viewModel.processSharedContent(initialContent)
+        val identifiedTitle = intent.getStringExtra(EXTRA_IDENTIFIED_TITLE)
+        if (!identifiedTitle.isNullOrBlank()) {
+            val artist = intent.getStringExtra(EXTRA_IDENTIFIED_ARTIST)
+            val album = intent.getStringExtra(EXTRA_IDENTIFIED_ALBUM)
+            val artUrl = intent.getStringExtra(EXTRA_IDENTIFIED_ART_URL)
+            viewModel.loadIdentifiedSong(identifiedTitle, artist, album, artUrl)
+        } else {
+            val sharedContents = ShareIntentParser.parse(this, intent)
+            val initialContent: SharedContent? = sharedContents.firstOrNull()
+            if (initialContent != null) {
+                viewModel.processSharedContent(initialContent)
+            }
         }
+    }
+
+    companion object {
+        const val EXTRA_IDENTIFIED_TITLE = "extra_identified_title"
+        const val EXTRA_IDENTIFIED_ARTIST = "extra_identified_artist"
+        const val EXTRA_IDENTIFIED_ALBUM = "extra_identified_album"
+        const val EXTRA_IDENTIFIED_ART_URL = "extra_identified_art_url"
     }
 
     override fun onDestroy() {

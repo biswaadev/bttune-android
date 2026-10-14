@@ -11,7 +11,6 @@ import android.graphics.drawable.GradientDrawable
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -21,23 +20,19 @@ import android.os.VibratorManager
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import coil.imageLoader
-import coil.request.ImageRequest
-import com.darkxvenom.airbeats.MainActivity
 import com.darkxvenom.airbeats.R
 import com.darkxvenom.airbeats.shazamkit.Shazam
 import com.darkxvenom.airbeats.shazamkit.ShazamSignatureGenerator
 import com.darkxvenom.airbeats.shazamkit.models.RecognitionResult
+import com.darkxvenom.airbeats.ui.sharedmusic.SharedMusicIdentificationActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,8 +43,8 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
- * Floating bottom overlay pill for quick music recognition over other apps (e.g. Instagram, TikTok).
- * Matches the native assistant bottom pill design and keeps underlying media playing.
+ * Floating compact pill overlay for quick music recognition matching the user's custom design.
+ * Keeps underlying social media apps (Instagram, TikTok) playing continuously.
  */
 class MusicRecognitionOverlayManager private constructor(private val context: Context) {
 
@@ -61,18 +56,11 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
     private var overlayView: View? = null
     private var isOverlayShowing = false
 
-    private var actionIconView: ImageView? = null
-    private var coverArtView: ImageView? = null
-    private var iconFrameView: FrameLayout? = null
     private var statusTextView: TextView? = null
-    private var titleTextView: TextView? = null
-    private var artistTextView: TextView? = null
-    private var playButtonView: TextView? = null
-    private var closeButtonView: TextView? = null
-    private var glowBar: View? = null
+    private var waveformContainer: LinearLayout? = null
+    private var waveformBars = mutableListOf<View>()
+    private var waveformAnimator: ValueAnimator? = null
 
-    private var glowAnimator: ValueAnimator? = null
-    private var pulseAnimator: ValueAnimator? = null
     private var activeJob: Job? = null
     private var currentResult: RecognitionResult? = null
 
@@ -123,74 +111,34 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         scheduleAutoDismiss(15000L)
         currentResult = null
 
-        statusTextView?.text = context.getString(R.string.music_recognition_overlay_listening)
-        statusTextView?.setTextColor(Color.parseColor("#00E5FF"))
+        statusTextView?.text = "Listening for music..."
+        statusTextView?.setTextColor(Color.parseColor("#E0E0E0"))
 
-        titleTextView?.text = context.getString(R.string.music_recognition_overlay_sub_listening)
-        titleTextView?.setTextColor(Color.WHITE)
-        titleTextView?.visibility = View.VISIBLE
-
-        artistTextView?.visibility = View.GONE
-        playButtonView?.visibility = View.GONE
-
-        actionIconView?.visibility = View.VISIBLE
-        actionIconView?.setImageResource(R.drawable.mic)
-        actionIconView?.setColorFilter(Color.parseColor("#00E5FF"))
-
-        coverArtView?.visibility = View.GONE
-        coverArtView?.setImageDrawable(null)
-
-        startPulseAnimation()
+        waveformContainer?.visibility = View.VISIBLE
+        startWaveformAnimation()
     }
 
     private fun bindProcessingUi() {
         mainHandler.post {
-            statusTextView?.text = context.getString(R.string.music_recognition_overlay_identifying)
+            statusTextView?.text = "Identifying with Shazam..."
             statusTextView?.setTextColor(Color.parseColor("#B388FF"))
-
-            titleTextView?.text = context.getString(R.string.music_recognition_overlay_sub_processing)
-            actionIconView?.setImageResource(R.drawable.graphic_eq)
-            actionIconView?.setColorFilter(Color.parseColor("#B388FF"))
         }
     }
 
     private fun bindSuccessUi(result: RecognitionResult) {
         mainHandler.post {
             currentResult = result
-            stopPulseAnimation()
+            stopWaveformAnimation()
+            waveformContainer?.visibility = View.GONE
             vibrateSuccess()
 
-            statusTextView?.text = context.getString(R.string.music_recognition_overlay_identified)
-            statusTextView?.setTextColor(Color.parseColor("#00E676"))
-
-            titleTextView?.text = result.title
-            titleTextView?.setTextColor(Color.WHITE)
-            titleTextView?.visibility = View.VISIBLE
-
-            artistTextView?.text = result.artist
-            artistTextView?.setTextColor(Color.parseColor("#B0B0C0"))
-            artistTextView?.visibility = View.VISIBLE
-
-            playButtonView?.visibility = View.VISIBLE
-
-            // Load album art if available
-            val coverUrl = result.coverArtHqUrl ?: result.coverArtUrl
-            if (!coverUrl.isNullOrBlank()) {
-                val request = ImageRequest.Builder(context)
-                    .data(coverUrl)
-                    .target { drawable ->
-                        coverArtView?.setImageDrawable(drawable)
-                        coverArtView?.visibility = View.VISIBLE
-                        actionIconView?.visibility = View.GONE
-                    }
-                    .build()
-                context.imageLoader.enqueue(request)
+            val displayTitle = if (!result.artist.isNullOrBlank()) {
+                "🎵 ${result.title} • ${result.artist}"
             } else {
-                actionIconView?.setImageResource(R.drawable.music_note)
-                actionIconView?.setColorFilter(Color.parseColor("#00E676"))
-                actionIconView?.visibility = View.VISIBLE
-                coverArtView?.visibility = View.GONE
+                "🎵 ${result.title}"
             }
+            statusTextView?.text = displayTitle
+            statusTextView?.setTextColor(Color.WHITE)
 
             scheduleAutoDismiss(10000L)
         }
@@ -199,21 +147,11 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
     private fun bindNoMatchUi(message: String? = null) {
         mainHandler.post {
             currentResult = null
-            stopPulseAnimation()
+            stopWaveformAnimation()
+            waveformContainer?.visibility = View.GONE
 
-            statusTextView?.text = context.getString(R.string.music_recognition_overlay_no_match)
+            statusTextView?.text = message ?: "No match found. Tap to retry"
             statusTextView?.setTextColor(Color.parseColor("#FFAB40"))
-
-            titleTextView?.text = message ?: context.getString(R.string.music_recognition_tap_to_listen)
-            titleTextView?.setTextColor(Color.parseColor("#E0E0E0"))
-
-            artistTextView?.visibility = View.GONE
-            playButtonView?.visibility = View.GONE
-
-            actionIconView?.setImageResource(R.drawable.refresh)
-            actionIconView?.setColorFilter(Color.parseColor("#FFAB40"))
-            actionIconView?.visibility = View.VISIBLE
-            coverArtView?.visibility = View.GONE
 
             scheduleAutoDismiss(6000L)
         }
@@ -222,21 +160,11 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
     private fun bindErrorUi(errorMsg: String) {
         mainHandler.post {
             currentResult = null
-            stopPulseAnimation()
+            stopWaveformAnimation()
+            waveformContainer?.visibility = View.GONE
 
-            statusTextView?.text = context.getString(R.string.music_recognition_recognition_failed)
+            statusTextView?.text = errorMsg
             statusTextView?.setTextColor(Color.parseColor("#FF5252"))
-
-            titleTextView?.text = errorMsg
-            titleTextView?.setTextColor(Color.parseColor("#E0E0E0"))
-
-            artistTextView?.visibility = View.GONE
-            playButtonView?.visibility = View.GONE
-
-            actionIconView?.setImageResource(R.drawable.refresh)
-            actionIconView?.setColorFilter(Color.parseColor("#FF5252"))
-            actionIconView?.visibility = View.VISIBLE
-            coverArtView?.visibility = View.GONE
 
             scheduleAutoDismiss(5000L)
         }
@@ -245,7 +173,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
     private suspend fun runRecognitionPipeline() {
         val samples = recordMicPcm16Mono(sampleRateHz = 16000, recordMs = 4200L)
         if (samples.isEmpty()) {
-            bindErrorUi("Microphone unavailable or silent")
+            bindErrorUi("Microphone silent or unavailable")
             return
         }
 
@@ -258,7 +186,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         }
 
         if (signature == null) {
-            bindNoMatchUi(context.getString(R.string.music_recognition_signature_failed))
+            bindNoMatchUi("Couldn't generate audio signature")
             return
         }
 
@@ -272,7 +200,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
                 if (msg.contains("no match", ignoreCase = true) || msg.contains("404")) {
                     bindNoMatchUi()
                 } else {
-                    bindErrorUi(msg.ifEmpty { "Connection or recognition failed" })
+                    bindErrorUi(msg.ifEmpty { "Recognition failed. Tap to retry" })
                 }
             }
         )
@@ -339,198 +267,133 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         if (overlayView != null && isOverlayShowing) return
 
         try {
-            val root = FrameLayout(context).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-
-            // Main bottom pill container card with glassmorphic styling
+            // Main compact horizontal pill container matching user's design
             val card = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                val bg = GradientDrawable().apply {
-                    setColor(Color.parseColor("#F5161622"))
-                    cornerRadii = floatArrayOf(
-                        dpToPx(28f), dpToPx(28f), // top-left
-                        dpToPx(28f), dpToPx(28f), // top-right
-                        0f, 0f, 0f, 0f
-                    )
-                    setStroke(dpToPx(1f).toInt(), Color.parseColor("#3500E5FF"))
-                }
-                background = bg
-                setPadding(dpToPx(18f).toInt(), dpToPx(10f).toInt(), dpToPx(18f).toInt(), dpToPx(22f).toInt())
-                elevation = dpToPx(14f)
-            }
-
-            // Top animated rainbow/cyan glow shimmer bar
-            val glow = View(context).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dpToPx(3.5f).toInt()
-                ).apply {
-                    bottomMargin = dpToPx(10f).toInt()
-                }
-                val glowGrad = GradientDrawable(
-                    GradientDrawable.Orientation.LEFT_RIGHT,
-                    intArrayOf(
-                        Color.parseColor("#00E5FF"), // Cyan
-                        Color.parseColor("#7C4DFF"), // Purple
-                        Color.parseColor("#FF4081"), // Pink
-                        Color.parseColor("#2979FF"), // Blue
-                        Color.parseColor("#00E5FF")  // Loop
-                    )
-                ).apply {
-                    cornerRadius = dpToPx(2f)
-                }
-                background = glowGrad
-            }
-            glowBar = glow
-            card.addView(glow)
-
-            // Content Header Row
-            val headerRow = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
+                val bg = GradientDrawable().apply {
+                    setColor(Color.parseColor("#14131E"))
+                    cornerRadius = dpToPx(30f)
+                    setStroke(dpToPx(1f).toInt(), Color.parseColor("#2C2B3C"))
+                }
+                background = bg
+                setPadding(dpToPx(10f).toInt(), dpToPx(6f).toInt(), dpToPx(8f).toInt(), dpToPx(6f).toInt())
+                elevation = dpToPx(16f)
             }
 
-            // Left icon / artwork frame
-            val iconFrame = FrameLayout(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dpToPx(42f).toInt(), dpToPx(42f).toInt()).apply {
-                    marginEnd = dpToPx(12f).toInt()
-                }
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor("#262638"))
-                }
-            }
-            iconFrameView = iconFrame
-
+            // Left: Official AirBeats App Icon (Circular)
             val iconView = ImageView(context).apply {
-                layoutParams = FrameLayout.LayoutParams(dpToPx(22f).toInt(), dpToPx(22f).toInt()).apply {
-                    gravity = Gravity.CENTER
-                }
-                setImageResource(R.drawable.mic)
-                setColorFilter(Color.parseColor("#00E5FF"))
-            }
-            actionIconView = iconView
-            iconFrame.addView(iconView)
-
-            val coverArt = ImageView(context).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(dpToPx(36f).toInt(), dpToPx(36f).toInt())
+                setImageResource(R.mipmap.ic_launcher_round)
                 clipToOutline = true
                 outlineProvider = object : ViewOutlineProvider() {
                     override fun getOutline(view: View, outline: Outline) {
-                        outline.setRoundRect(0, 0, view.width, view.height, dpToPx(10f))
+                        outline.setOval(0, 0, view.width, view.height)
                     }
                 }
             }
-            coverArtView = coverArt
-            iconFrame.addView(coverArt)
+            card.addView(iconView)
 
-            iconFrame.setOnClickListener {
-                if (currentResult == null) {
-                    startListening()
-                } else {
-                    launchAirBeatsWithCurrentResult()
-                }
+            // Text "AirBeats"
+            val appTitleTv = TextView(context).apply {
+                text = "AirBeats"
+                setTextColor(Color.WHITE)
+                textSize = 15.5f
+                paint.isFakeBoldText = true
+                setPadding(dpToPx(8f).toInt(), 0, 0, 0)
             }
-            headerRow.addView(iconFrame)
+            card.addView(appTitleTv)
 
-            // Text column (Status + Title + Artist)
-            val textCol = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            // Vertical subtle divider line
+            val divider = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(dpToPx(1f).toInt(), dpToPx(20f).toInt()).apply {
+                    marginStart = dpToPx(12f).toInt()
+                    marginEnd = dpToPx(12f).toInt()
+                }
+                setBackgroundColor(Color.parseColor("#2C2B3C"))
+            }
+            card.addView(divider)
+
+            // Middle Section Container (Waveform bars + Status text)
+            val middleSection = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 setOnClickListener {
                     if (currentResult != null) {
-                        launchAirBeatsWithCurrentResult()
+                        launchReelIdentificationScreen()
                     } else {
                         startListening()
                     }
                 }
             }
 
-            val statusTv = TextView(context).apply {
-                text = context.getString(R.string.music_recognition_overlay_listening)
-                setTextColor(Color.parseColor("#00E5FF"))
-                textSize = 12f
-                paint.isFakeBoldText = true
-            }
-            statusTextView = statusTv
-            textCol.addView(statusTv)
-
-            val titleTv = TextView(context).apply {
-                setTextColor(Color.WHITE)
-                textSize = 14.5f
-                paint.isFakeBoldText = true
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            }
-            titleTextView = titleTv
-            textCol.addView(titleTv)
-
-            val artistTv = TextView(context).apply {
-                setTextColor(Color.parseColor("#B0B0C0"))
-                textSize = 12f
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                visibility = View.GONE
-            }
-            artistTextView = artistTv
-            textCol.addView(artistTv)
-
-            headerRow.addView(textCol)
-
-            // Actions row (Play Button + Close "✕")
-            val actionsRow = LinearLayout(context).apply {
+            // 5 Animated Waveform Bars
+            val waveContainer = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dpToPx(22f).toInt())
             }
-
-            // Play button pill
-            val playBtn = TextView(context).apply {
-                text = "▶  " + context.getString(R.string.music_recognition_overlay_play)
-                setTextColor(Color.parseColor("#00E5FF"))
-                textSize = 12.5f
-                paint.isFakeBoldText = true
-                background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#2000E5FF"))
-                    cornerRadius = dpToPx(16f)
-                    setStroke(dpToPx(1f).toInt(), Color.parseColor("#6000E5FF"))
+            waveformBars.clear()
+            val baseHeights = listOf(7f, 13f, 19f, 13f, 7f)
+            for (i in 0 until 5) {
+                val bar = View(context).apply {
+                    val h = dpToPx(baseHeights[i]).toInt()
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(3.5f).toInt(), h).apply {
+                        marginStart = if (i == 0) 0 else dpToPx(2.5f).toInt()
+                    }
+                    val barDrawable = GradientDrawable().apply {
+                        setColor(Color.parseColor("#8364FF"))
+                        cornerRadius = dpToPx(2f)
+                    }
+                    background = barDrawable
                 }
-                setPadding(dpToPx(12f).toInt(), dpToPx(6f).toInt(), dpToPx(12f).toInt(), dpToPx(6f).toInt())
-                visibility = View.GONE
-                setOnClickListener { launchAirBeatsWithCurrentResult() }
+                waveformBars.add(bar)
+                waveContainer.addView(bar)
             }
-            playButtonView = playBtn
-            actionsRow.addView(playBtn)
+            waveformContainer = waveContainer
+            middleSection.addView(waveContainer)
 
-            // Close button (✕)
-            val closeBtn = TextView(context).apply {
-                text = "✕"
-                setTextColor(Color.parseColor("#707080"))
-                textSize = 16f
-                setPadding(dpToPx(10f).toInt(), dpToPx(6f).toInt(), dpToPx(4f).toInt(), dpToPx(6f).toInt())
+            // Status label ("Listening for music...")
+            val statusTv = TextView(context).apply {
+                text = "Listening for music..."
+                setTextColor(Color.parseColor("#E0E0E0"))
+                textSize = 13.5f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dpToPx(10f).toInt(), 0, dpToPx(6f).toInt(), 0)
+            }
+            statusTextView = statusTv
+            middleSection.addView(statusTv)
+
+            card.addView(middleSection)
+
+            // Right: Circular close button (✕)
+            val closeBtnFrame = FrameLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(dpToPx(34f).toInt(), dpToPx(34f).toInt()).apply {
+                    marginStart = dpToPx(10f).toInt()
+                }
+                val closeBg = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor("#252433"))
+                }
+                background = closeBg
                 setOnClickListener { hide() }
             }
-            closeButtonView = closeBtn
-            actionsRow.addView(closeBtn)
 
-            headerRow.addView(actionsRow)
-            card.addView(headerRow)
-            root.addView(card)
+            val closeTv = TextView(context).apply {
+                text = "✕"
+                setTextColor(Color.WHITE)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                paint.isFakeBoldText = true
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            }
+            closeBtnFrame.addView(closeTv)
+            card.addView(closeBtnFrame)
 
             val layoutParams = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -542,73 +405,66 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
                         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.BOTTOM or Gravity.FILL_HORIZONTAL
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 x = 0
-                y = 0
+                y = dpToPx(40f).toInt()
                 windowAnimations = android.R.style.Animation_Toast
             }
 
-            windowManager.addView(root, layoutParams)
-            overlayView = root
+            windowManager.addView(card, layoutParams)
+            overlayView = card
             isOverlayShowing = true
 
-            startGlowAnimation()
+            startWaveformAnimation()
         } catch (e: Exception) {
             Timber.e(e, "Error adding music recognition overlay view")
         }
     }
 
-    private fun launchAirBeatsWithCurrentResult() {
+    private fun launchReelIdentificationScreen() {
         val res = currentResult ?: return
-        val query = "${res.title} ${res.artist}".trim()
 
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_SEARCH
-            putExtra("search_query", query)
+        // Opens the exact same screen shown when sharing a reel to AirBeats
+        val intent = Intent(context, SharedMusicIdentificationActivity::class.java).apply {
+            putExtra(SharedMusicIdentificationActivity.EXTRA_IDENTIFIED_TITLE, res.title)
+            putExtra(SharedMusicIdentificationActivity.EXTRA_IDENTIFIED_ARTIST, res.artist)
+            putExtra(SharedMusicIdentificationActivity.EXTRA_IDENTIFIED_ALBUM, res.album)
+            putExtra(SharedMusicIdentificationActivity.EXTRA_IDENTIFIED_ART_URL, res.coverArtHqUrl ?: res.coverArtUrl)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
 
         context.startActivity(intent)
         hide()
     }
 
-    private fun startGlowAnimation() {
-        glowAnimator?.cancel()
-        glowAnimator = ValueAnimator.ofFloat(0.55f, 1.0f).apply {
-            duration = 1000
-            repeatMode = ValueAnimator.REVERSE
-            repeatCount = ValueAnimator.INFINITE
-            interpolator = LinearInterpolator()
-            addUpdateListener { anim ->
-                glowBar?.alpha = anim.animatedValue as Float
-            }
-            start()
-        }
-    }
-
-    private fun startPulseAnimation() {
-        pulseAnimator?.cancel()
-        pulseAnimator = ValueAnimator.ofFloat(1.0f, 1.14f).apply {
-            duration = 600
+    private fun startWaveformAnimation() {
+        waveformAnimator?.cancel()
+        waveformAnimator = ValueAnimator.ofFloat(0.3f, 1.0f).apply {
+            duration = 500
             repeatMode = ValueAnimator.REVERSE
             repeatCount = ValueAnimator.INFINITE
             interpolator = AccelerateDecelerateInterpolator()
             addUpdateListener { anim ->
-                val scale = anim.animatedValue as Float
-                iconFrameView?.scaleX = scale
-                iconFrameView?.scaleY = scale
+                val fraction = anim.animatedFraction
+                waveformBars.forEachIndexed { index, bar ->
+                    val multiplier = when (index) {
+                        0, 4 -> 0.6f + 0.4f * (1f - fraction)
+                        1, 3 -> 0.4f + 0.6f * fraction
+                        else -> 0.5f + 0.5f * fraction
+                    }
+                    bar.scaleY = multiplier
+                }
             }
             start()
         }
     }
 
-    private fun stopPulseAnimation() {
-        pulseAnimator?.cancel()
-        pulseAnimator = null
-        iconFrameView?.scaleX = 1f
-        iconFrameView?.scaleY = 1f
+    private fun stopWaveformAnimation() {
+        waveformAnimator?.cancel()
+        waveformAnimator = null
+        waveformBars.forEach { it.scaleY = 1f }
     }
 
     private fun vibrateSuccess() {
@@ -645,9 +501,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
 
         mainHandler.post {
             try {
-                glowAnimator?.cancel()
-                glowAnimator = null
-                stopPulseAnimation()
+                stopWaveformAnimation()
 
                 if (overlayView != null && isOverlayShowing) {
                     windowManager.removeView(overlayView)

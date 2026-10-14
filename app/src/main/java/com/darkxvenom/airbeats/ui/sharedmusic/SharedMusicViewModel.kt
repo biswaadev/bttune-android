@@ -78,6 +78,42 @@ class SharedMusicViewModel @Inject constructor(
         }
     }
 
+    fun loadIdentifiedSong(
+        title: String,
+        artist: String?,
+        album: String?,
+        albumArtUrl: String?,
+        durationMs: Long? = null
+    ) {
+        currentJob?.cancel()
+        currentJob = viewModelScope.launch {
+            _uiState.value = SharedMusicUiState.Processing(com.darkxvenom.airbeats.usecases.IdentificationStep.SEARCHING_AIRBEATS)
+            val song = com.darkxvenom.airbeats.songs.IdentifiedSong(
+                title = title,
+                artist = artist,
+                album = album,
+                albumArtUrl = albumArtUrl,
+                durationMs = durationMs
+            )
+            try {
+                val providerSearchManager = com.darkxvenom.airbeats.providers.ProviderSearchManager(context)
+                val candidates = providerSearchManager.searchProviders(song)
+                val bestMatch = candidates.firstOrNull()
+                _uiState.value = SharedMusicUiState.Success(
+                    identifiedSong = song,
+                    airBeatsMatch = bestMatch,
+                    candidates = candidates
+                )
+            } catch (e: Exception) {
+                _uiState.value = SharedMusicUiState.Success(
+                    identifiedSong = song,
+                    airBeatsMatch = null,
+                    candidates = emptyList()
+                )
+            }
+        }
+    }
+
     fun cancel() {
         currentJob?.cancel()
         _uiState.value = SharedMusicUiState.Idle

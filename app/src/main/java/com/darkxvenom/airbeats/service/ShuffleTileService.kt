@@ -5,11 +5,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
 import com.darkxvenom.airbeats.R
 import com.darkxvenom.airbeats.extensions.toMediaItem
+import com.darkxvenom.airbeats.jiosaavn.JioSaavnApi
 import com.darkxvenom.airbeats.playback.MusicService
 import com.darkxvenom.airbeats.playback.PlayerConnection
 import com.darkxvenom.airbeats.playback.queues.ListQueue
@@ -29,6 +33,8 @@ import timber.log.Timber
 class ShuffleTileService : TileService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var activeConnection: ServiceConnection? = null
 
     override fun onStartListening() {
         super.onStartListening()
@@ -43,6 +49,10 @@ class ShuffleTileService : TileService() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        activeConnection?.let {
+            runCatching { unbindService(it) }
+            activeConnection = null
+        }
     }
 
     private fun updateTileState() {
@@ -85,28 +95,51 @@ class ShuffleTileService : TileService() {
     private fun handleShuffle() {
         val existingService = MusicService.instance
         if (existingService != null) {
-            playOrShuffleOnService(existingService)
+            playOrShuffleOnService(existingService, onFinished = {})
             return
         }
 
-        // Service not yet running in memory - bind and start playback in background
+        // Start service as foreground service first so Android does not kill it
         val intent = Intent(this, MusicService::class.java)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(this, intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error starting MusicService from ShuffleTileService")
+        }
+
+        // Safely unbind existing connection if any
+        activeConnection?.let {
+            runCatching { unbindService(it) }
+            activeConnection = null
+        }
+
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 val service = (binder as? MusicService.MusicBinder)?.service
                 if (service != null) {
-                    playOrShuffleOnService(service)
-                }
-                try {
-                    unbindService(this)
-                } catch (e: Exception) {
-                    Timber.w(e, "Error unbinding from MusicService in ShuffleTileService")
+                    playOrShuffleOnService(service) {
+                        mainHandler.postDelayed({
+                            runCatching {
+                                if (activeConnection == this) {
+                                    unbindService(this)
+                                    activeConnection = null
+                                }
+                            }
+                        }, 2500L)
+                    }
                 }
             }
 
-            override fun onServiceDisconnected(name: ComponentName?) {}
+            override fun onServiceDisconnected(name: ComponentName?) {
+                activeConnection = null
+            }
         }
 
+        activeConnection = connection
         try {
             bindService(intent, connection, Context.BIND_AUTO_CREATE)
         } catch (e: Exception) {
@@ -114,7 +147,7 @@ class ShuffleTileService : TileService() {
         }
     }
 
-    private fun playOrShuffleOnService(service: MusicService) {
+    private fun playOrShuffleOnService(service: MusicService, onFinished: () -> Unit) {
         val player = service.player
 
         if (player.mediaItemCount > 0) {
@@ -125,29 +158,49 @@ class ShuffleTileService : TileService() {
                 player.seekToNextMediaItem()
             }
             updateTileState()
+            onFinished()
         } else {
-            // Queue is empty: load library or liked songs, shuffle them, and play!
+            // Queue is empty: load recent songs, library, liked songs, or trending music!
             serviceScope.launch {
                 try {
-                    val songs = service.database.songsByPlayTimeAsc().firstOrNull()
-                        ?: service.database.likedSongsByRowIdAsc().firstOrNull()
-                        ?: emptyList()
+                    val dbSongs = runCatching { service.database.recentSongs(100).firstOrNull() }.getOrNull()?.takeIf { it.isNotEmpty() }
+                        ?: runCatching { service.database.allSongs().firstOrNull() }.getOrNull()?.takeIf { it.isNotEmpty() }
+                        ?: runCatching { service.database.likedSongsByRowIdAsc().firstOrNull() }.getOrNull()?.takeIf { it.isNotEmpty() }
+                        ?: runCatching { service.database.songsByPlayTimeAsc().firstOrNull() }.getOrNull()?.takeIf { it.isNotEmpty() }
 
-                    if (songs.isNotEmpty()) {
-                        val shuffled = songs.shuffled().map { it.toMediaItem() }
+                    if (!dbSongs.isNullOrEmpty()) {
+                        val shuffled = dbSongs.shuffled().map { it.toMediaItem() }
                         withContext(Dispatchers.Main) {
                             service.playQueue(ListQueue(title = getString(R.string.shuffle), items = shuffled))
                             service.player.shuffleModeEnabled = true
                             service.player.play()
                             updateTileState()
+                            onFinished()
                         }
                     } else {
-                        withContext(Dispatchers.Main) {
-                            updateTileState()
+                        // Brand new install fallback: fetch trending songs online
+                        val trendingSongs = runCatching { JioSaavnApi.getTrendingSongs().getOrNull() }.getOrNull()
+                        if (!trendingSongs.isNullOrEmpty()) {
+                            val shuffledMediaItems = trendingSongs.shuffled().map { it.toMediaItem() }
+                            withContext(Dispatchers.Main) {
+                                service.playQueue(ListQueue(title = getString(R.string.shuffle), items = shuffledMediaItems))
+                                service.player.shuffleModeEnabled = true
+                                service.player.play()
+                                updateTileState()
+                                onFinished()
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                updateTileState()
+                                onFinished()
+                            }
                         }
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "Error loading songs for shuffle tile")
+                    withContext(Dispatchers.Main) {
+                        onFinished()
+                    }
                 }
             }
         }
