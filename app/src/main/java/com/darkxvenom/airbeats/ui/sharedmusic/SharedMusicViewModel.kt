@@ -92,7 +92,7 @@ class SharedMusicViewModel @Inject constructor(
                 val query = "${providerSong.title} ${providerSong.artists.joinToString(" ")}".trim()
                 val ytResult = runCatching { YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull() }.getOrNull()
                 val topSong = ytResult?.items?.filterIsInstance<SongItem>()?.firstOrNull()
-                    ?: runCatching { YouTube.search(query).getOrNull() }?.getOrNull()?.items?.filterIsInstance<SongItem>()?.firstOrNull()
+                    ?: runCatching { YouTube.searchSummary(query).getOrNull() }?.getOrNull()?.summaries?.flatMap { it.items }?.filterIsInstance<SongItem>()?.firstOrNull()
 
                 withContext(Dispatchers.Main) {
                     if (topSong != null) {
@@ -135,8 +135,8 @@ class SharedMusicViewModel @Inject constructor(
                 val fallbackMetadata = MediaMetadata(
                     id = "",
                     title = song.title,
-                    artists = listOf(com.darkxvenom.airbeats.models.Artist(id = "", name = song.artist ?: "")),
-                    album = song.album?.let { com.darkxvenom.airbeats.models.Album(id = "", name = it) },
+                    artists = listOf(MediaMetadata.Artist(id = null, name = song.artist ?: "")),
+                    album = song.album?.let { MediaMetadata.Album(id = "", title = it) },
                     thumbnailUrl = song.albumArtUrl,
                     duration = 0
                 )

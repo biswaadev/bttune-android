@@ -67,12 +67,13 @@ class ProviderSearchManager(private val context: Context) {
             }
         }
 
-        // 2. If no song items found with FILTER_SONG, try general YouTube search
+        // 2. If no song items found with FILTER_SONG, try general YouTube search summary
         if (rawCandidates.isEmpty()) {
             for (q in queries.take(2)) {
                 try {
-                    val ytResult = YouTube.search(q).getOrNull()
-                    ytResult?.items
+                    val summaryResult = YouTube.searchSummary(q).getOrNull()
+                    summaryResult?.summaries
+                        ?.flatMap { it.items }
                         ?.filterIsInstance<SongItem>()
                         ?.filterExplicit(hideExplicit)
                         ?.forEach { item ->
@@ -91,7 +92,7 @@ class ProviderSearchManager(private val context: Context) {
                             }
                         }
                 } catch (e: Exception) {
-                    Log.w(TAG, "YouTube general search failed for query: $q", e)
+                    Log.w(TAG, "YouTube search summary failed for query: $q", e)
                 }
             }
         }
