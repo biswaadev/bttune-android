@@ -23,60 +23,113 @@ class ProviderSearchManager(private val context: Context) {
     }
 
     suspend fun searchProviders(song: IdentifiedSong): List<ProviderSong> = withContext(Dispatchers.IO) {
-        val query = "${song.title} ${song.artist.orEmpty()}".trim()
-        if (query.isBlank()) return@withContext emptyList()
+        val rawCandidates = mutableListOf<ProviderSong>()
+        val cleanTitle = song.title.replace(Regex("\\(.*?\\)|\\[.*?\\]"), "").trim()
+        val artistsList = song.artist?.split(",", "&", "feat.", "ft.", "/")
+            ?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+        val primaryArtist = artistsList.firstOrNull().orEmpty()
+
+        val queries = linkedSetOf(
+            "${song.title} ${song.artist.orEmpty()}".trim(),
+            "$cleanTitle ${song.artist.orEmpty()}".trim(),
+            "$cleanTitle $primaryArtist".trim(),
+            song.title.trim()
+        ).filter { it.isNotBlank() }
 
         val hideExplicit = context.dataStore.getSuspend(HideExplicitKey, false)
         val enableJioSaavn = context.dataStore.getSuspend(EnableJioSaavnKey, false)
 
-        val rawCandidates = mutableListOf<ProviderSong>()
-
-        // 1. Search YouTube Music
-        try {
-            val ytResult = YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull()
-            ytResult?.items
-                ?.filterIsInstance<SongItem>()
-                ?.filterExplicit(hideExplicit)
-                ?.forEach { item ->
-                    rawCandidates.add(
-                        ProviderSong(
-                            id = item.id,
-                            title = item.title,
-                            artists = item.artists.map { it.name },
-                            duration = item.duration ?: -1,
-                            thumbnailUrl = item.thumbnail,
-                            mediaMetadata = item.toMediaMetadata(),
-                            provider = "YT"
-                        )
-                    )
-                }
-        } catch (e: Exception) {
-            Log.w(TAG, "YouTube search failed for query: $query", e)
-        }
-
-        // 2. Search JioSaavn if enabled or if YT returned no results
-        if (enableJioSaavn || rawCandidates.isEmpty()) {
+        // 1. Search YouTube Music with progressive queries
+        for (q in queries) {
+            if (rawCandidates.size >= 5) break
             try {
-                val jioResult = JioSaavnApi.searchSongs(query).getOrNull()
-                jioResult?.forEach { item ->
-                    rawCandidates.add(
-                        ProviderSong(
-                            id = item.id,
-                            title = item.title,
-                            artists = item.artists.map { it.name },
-                            duration = item.duration ?: -1,
-                            thumbnailUrl = item.thumbnail,
-                            mediaMetadata = item.toMediaMetadata(),
-                            provider = "JIOSAAVN"
-                        )
-                    )
-                }
+                val ytResult = YouTube.search(q, YouTube.SearchFilter.FILTER_SONG).getOrNull()
+                ytResult?.items
+                    ?.filterIsInstance<SongItem>()
+                    ?.filterExplicit(hideExplicit)
+                    ?.forEach { item ->
+                        if (rawCandidates.none { it.id == item.id }) {
+                            rawCandidates.add(
+                                ProviderSong(
+                                    id = item.id,
+                                    title = item.title,
+                                    artists = item.artists.map { it.name },
+                                    duration = item.duration ?: -1,
+                                    thumbnailUrl = item.thumbnail,
+                                    mediaMetadata = item.toMediaMetadata(),
+                                    provider = "YT"
+                                )
+                            )
+                        }
+                    }
             } catch (e: Exception) {
-                Log.w(TAG, "JioSaavn search failed for query: $query", e)
+                Log.w(TAG, "YouTube search failed for query: $q", e)
             }
         }
 
-        // 3. Rank results with SongMatchEngine
-        SongMatchEngine.rankCandidates(song, rawCandidates)
+        // 2. If no song items found with FILTER_SONG, try general YouTube search
+        if (rawCandidates.isEmpty()) {
+            for (q in queries.take(2)) {
+                try {
+                    val ytResult = YouTube.search(q).getOrNull()
+                    ytResult?.items
+                        ?.filterIsInstance<SongItem>()
+                        ?.filterExplicit(hideExplicit)
+                        ?.forEach { item ->
+                            if (rawCandidates.none { it.id == item.id }) {
+                                rawCandidates.add(
+                                    ProviderSong(
+                                        id = item.id,
+                                        title = item.title,
+                                        artists = item.artists.map { it.name },
+                                        duration = item.duration ?: -1,
+                                        thumbnailUrl = item.thumbnail,
+                                        mediaMetadata = item.toMediaMetadata(),
+                                        provider = "YT"
+                                    )
+                                )
+                            }
+                        }
+                } catch (e: Exception) {
+                    Log.w(TAG, "YouTube general search failed for query: $q", e)
+                }
+            }
+        }
+
+        // 3. Search JioSaavn if enabled or if YT returned few results
+        if (enableJioSaavn || rawCandidates.size < 3) {
+            for (q in queries.take(2)) {
+                try {
+                    val jioResult = JioSaavnApi.searchSongs(q).getOrNull()
+                    jioResult?.forEach { item ->
+                        if (rawCandidates.none { it.id == item.id }) {
+                            rawCandidates.add(
+                                ProviderSong(
+                                    id = item.id,
+                                    title = item.title,
+                                    artists = item.artists.map { it.name },
+                                    duration = item.duration ?: -1,
+                                    thumbnailUrl = item.thumbnail,
+                                    mediaMetadata = item.toMediaMetadata(),
+                                    provider = "JIOSAAVN"
+                                )
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "JioSaavn search failed for query: $q", e)
+                }
+            }
+        }
+
+        // 4. Rank results with SongMatchEngine
+        val ranked = SongMatchEngine.rankCandidates(song, rawCandidates)
+        if (ranked.isNotEmpty()) {
+            ranked
+        } else if (rawCandidates.isNotEmpty()) {
+            rawCandidates
+        } else {
+            emptyList()
+        }
     }
 }

@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import com.darkxvenom.airbeats.R
 import com.darkxvenom.airbeats.extensions.toMediaItem
 import com.darkxvenom.airbeats.jiosaavn.JioSaavnApi
+import com.darkxvenom.airbeats.innertube.YouTube
 import com.darkxvenom.airbeats.playback.MusicService
 import com.darkxvenom.airbeats.playback.PlayerConnection
 import com.darkxvenom.airbeats.playback.queues.ListQueue
@@ -39,6 +40,14 @@ class ShuffleTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         updateTileState()
+    }
+
+    override fun onStopListening() {
+        super.onStopListening()
+        activeConnection?.let {
+            runCatching { unbindService(it) }
+            activeConnection = null
+        }
     }
 
     override fun onTileAdded() {
@@ -93,22 +102,15 @@ class ShuffleTileService : TileService() {
     }
 
     private fun handleShuffle() {
-        val existingService = MusicService.instance
+        val existingService = MusicService.instance ?: PlayerConnection.instance?.service
         if (existingService != null) {
-            playOrShuffleOnService(existingService, onFinished = {})
+            playOrShuffleOnService(existingService)
             return
         }
 
-        // Start service as foreground service first so Android does not kill it
         val intent = Intent(this, MusicService::class.java)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                ContextCompat.startForegroundService(this, intent)
-            } else {
-                startService(intent)
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Error starting MusicService from ShuffleTileService")
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            runCatching { startService(intent) }
         }
 
         // Safely unbind existing connection if any
@@ -119,18 +121,9 @@ class ShuffleTileService : TileService() {
 
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                val service = (binder as? MusicService.MusicBinder)?.service
+                val service = (binder as? MusicService.MusicBinder)?.service ?: MusicService.instance
                 if (service != null) {
-                    playOrShuffleOnService(service) {
-                        mainHandler.postDelayed({
-                            runCatching {
-                                if (activeConnection == this) {
-                                    unbindService(this)
-                                    activeConnection = null
-                                }
-                            }
-                        }, 2500L)
-                    }
+                    playOrShuffleOnService(service)
                 }
             }
 
@@ -147,7 +140,7 @@ class ShuffleTileService : TileService() {
         }
     }
 
-    private fun playOrShuffleOnService(service: MusicService, onFinished: () -> Unit) {
+    private fun playOrShuffleOnService(service: MusicService) {
         val player = service.player
 
         if (player.mediaItemCount > 0) {
@@ -158,7 +151,6 @@ class ShuffleTileService : TileService() {
                 player.seekToNextMediaItem()
             }
             updateTileState()
-            onFinished()
         } else {
             // Queue is empty: load recent songs, library, liked songs, or trending music!
             serviceScope.launch {
@@ -175,32 +167,41 @@ class ShuffleTileService : TileService() {
                             service.player.shuffleModeEnabled = true
                             service.player.play()
                             updateTileState()
-                            onFinished()
                         }
                     } else {
-                        // Brand new install fallback: fetch trending songs online
-                        val trendingSongs = runCatching { JioSaavnApi.getTrendingSongs().getOrNull() }.getOrNull()
-                        if (!trendingSongs.isNullOrEmpty()) {
-                            val shuffledMediaItems = trendingSongs.shuffled().map { it.toMediaItem() }
+                        // Brand new install fallback: fetch trending songs online (YouTube or JioSaavn)
+                        val ytSongs = runCatching {
+                            val ytRes = YouTube.search("top hits", YouTube.SearchFilter.FILTER_SONG).getOrNull()
+                            ytRes?.items?.filterIsInstance<com.darkxvenom.airbeats.innertube.models.SongItem>()
+                        }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+                        if (!ytSongs.isNullOrEmpty()) {
+                            val shuffledMediaItems = ytSongs.shuffled().map { it.toMediaItem() }
                             withContext(Dispatchers.Main) {
                                 service.playQueue(ListQueue(title = getString(R.string.shuffle), items = shuffledMediaItems))
                                 service.player.shuffleModeEnabled = true
                                 service.player.play()
                                 updateTileState()
-                                onFinished()
                             }
                         } else {
-                            withContext(Dispatchers.Main) {
-                                updateTileState()
-                                onFinished()
+                            val trendingSongs = runCatching { JioSaavnApi.getTrendingSongs().getOrNull() }.getOrNull()
+                            if (!trendingSongs.isNullOrEmpty()) {
+                                val shuffledMediaItems = trendingSongs.shuffled().map { it.toMediaItem() }
+                                withContext(Dispatchers.Main) {
+                                    service.playQueue(ListQueue(title = getString(R.string.shuffle), items = shuffledMediaItems))
+                                    service.player.shuffleModeEnabled = true
+                                    service.player.play()
+                                    updateTileState()
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    updateTileState()
+                                }
                             }
                         }
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "Error loading songs for shuffle tile")
-                    withContext(Dispatchers.Main) {
-                        onFinished()
-                    }
                 }
             }
         }

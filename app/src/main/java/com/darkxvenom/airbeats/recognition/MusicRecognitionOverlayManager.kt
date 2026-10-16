@@ -60,6 +60,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
     private var waveformContainer: LinearLayout? = null
     private var waveformBars = mutableListOf<View>()
     private var waveformAnimator: ValueAnimator? = null
+    private var playButton: View? = null
 
     private var activeJob: Job? = null
     private var currentResult: RecognitionResult? = null
@@ -114,6 +115,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         statusTextView?.text = "Listening for music..."
         statusTextView?.setTextColor(Color.parseColor("#E0E0E0"))
 
+        playButton?.visibility = View.GONE
         waveformContainer?.visibility = View.VISIBLE
         startWaveformAnimation()
     }
@@ -122,6 +124,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         mainHandler.post {
             statusTextView?.text = "Identifying with Shazam..."
             statusTextView?.setTextColor(Color.parseColor("#B388FF"))
+            playButton?.visibility = View.GONE
         }
     }
 
@@ -130,6 +133,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             currentResult = result
             stopWaveformAnimation()
             waveformContainer?.visibility = View.GONE
+            playButton?.visibility = View.VISIBLE
             vibrateSuccess()
 
             val displayTitle = if (!result.artist.isNullOrBlank()) {
@@ -149,6 +153,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             currentResult = null
             stopWaveformAnimation()
             waveformContainer?.visibility = View.GONE
+            playButton?.visibility = View.GONE
 
             statusTextView?.text = message ?: "No match found. Tap to retry"
             statusTextView?.setTextColor(Color.parseColor("#FFAB40"))
@@ -162,6 +167,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             currentResult = null
             stopWaveformAnimation()
             waveformContainer?.visibility = View.GONE
+            playButton?.visibility = View.GONE
 
             statusTextView?.text = errorMsg
             statusTextView?.setTextColor(Color.parseColor("#FF5252"))
@@ -277,7 +283,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
                     setStroke(dpToPx(1f).toInt(), Color.parseColor("#2C2B3C"))
                 }
                 background = bg
-                setPadding(dpToPx(10f).toInt(), dpToPx(6f).toInt(), dpToPx(8f).toInt(), dpToPx(6f).toInt())
+                setPadding(dpToPx(12f).toInt(), dpToPx(10f).toInt(), dpToPx(10f).toInt(), dpToPx(10f).toInt())
                 elevation = dpToPx(16f)
             }
 
@@ -321,7 +327,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 setOnClickListener {
                     if (currentResult != null) {
-                        launchReelIdentificationScreen()
+                        launchReelIdentificationScreen(autoPlay = false)
                     } else {
                         startListening()
                     }
@@ -362,16 +368,49 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(dpToPx(10f).toInt(), 0, dpToPx(6f).toInt(), 0)
+                val displayMetrics = context.resources.displayMetrics
+                val maxMiddleWidth = (displayMetrics.widthPixels - dpToPx(210f)).toInt()
+                maxWidth = maxMiddleWidth.coerceAtLeast(dpToPx(130f).toInt())
             }
             statusTextView = statusTv
             middleSection.addView(statusTv)
 
             card.addView(middleSection)
 
-            // Right: Circular close button (✕)
+            // Right 1: Circular Play Button (▶)
+            val playBtnFrame = FrameLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(dpToPx(34f).toInt(), dpToPx(34f).toInt()).apply {
+                    marginStart = dpToPx(8f).toInt()
+                }
+                val playBg = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor("#7C5CFF"))
+                }
+                background = playBg
+                visibility = View.GONE
+                setOnClickListener {
+                    if (currentResult != null) {
+                        launchReelIdentificationScreen(autoPlay = true)
+                    }
+                }
+            }
+
+            val playTv = TextView(context).apply {
+                text = "▶"
+                setTextColor(Color.WHITE)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(dpToPx(2f).toInt(), 0, 0, 0)
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            }
+            playBtnFrame.addView(playTv)
+            playButton = playBtnFrame
+            card.addView(playBtnFrame)
+
+            // Right 2: Circular close button (✕)
             val closeBtnFrame = FrameLayout(context).apply {
                 layoutParams = LinearLayout.LayoutParams(dpToPx(34f).toInt(), dpToPx(34f).toInt()).apply {
-                    marginStart = dpToPx(10f).toInt()
+                    marginStart = dpToPx(6f).toInt()
                 }
                 val closeBg = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
@@ -407,7 +446,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 x = 0
-                y = dpToPx(40f).toInt()
+                y = dpToPx(16f).toInt()
                 windowAnimations = android.R.style.Animation_Toast
             }
 
@@ -421,7 +460,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         }
     }
 
-    private fun launchReelIdentificationScreen() {
+    private fun launchReelIdentificationScreen(autoPlay: Boolean = false) {
         val res = currentResult ?: return
 
         // Opens the exact same screen shown when sharing a reel to AirBeats
@@ -430,6 +469,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             putExtra(SharedMusicIdentificationActivity.EXTRA_IDENTIFIED_ARTIST, res.artist)
             putExtra(SharedMusicIdentificationActivity.EXTRA_IDENTIFIED_ALBUM, res.album)
             putExtra(SharedMusicIdentificationActivity.EXTRA_IDENTIFIED_ART_URL, res.coverArtHqUrl ?: res.coverArtUrl)
+            putExtra(SharedMusicIdentificationActivity.EXTRA_AUTO_PLAY, autoPlay)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
