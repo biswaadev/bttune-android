@@ -1081,6 +1081,23 @@
     <string name="preset_30s">30s Clip</string>
     <string name="preset_45s">45s</string>
     <string name="preset_60s">60s</string>
+    <string name="quick_settings_music_recognition_subtitle">Tap to identify music</string>
+    <string name="quick_settings_add_tile">Add Identify Music to Quick Settings</string>
+    <string name="quick_settings_tile_added">Tile added to Quick Settings!</string>
+    <string name="shuffle_music">Shuffle Music</string>
+    <string name="shuffle_playing">Playing Shuffled</string>
+    <string name="shuffle_tap_to_play">Tap to shuffle</string>
+    <string name="music_recognition_overlay_title">Identify Music</string>
+    <string name="music_recognition_overlay_listening">AirBeats • Listening…</string>
+    <string name="music_recognition_overlay_identifying">AirBeats • Identifying…</string>
+    <string name="music_recognition_overlay_identified">🎵 Identified Track</string>
+    <string name="music_recognition_overlay_sub_listening">Listening to audio playing nearby…</string>
+    <string name="music_recognition_overlay_sub_processing">Matching fingerprint with Shazam…</string>
+    <string name="music_recognition_overlay_no_match">No match found. Tap to try again.</string>
+    <string name="music_recognition_overlay_play">Play</string>
+    <string name="music_recognition_overlay_permission_title">Overlay Permission Needed</string>
+    <string name="music_recognition_overlay_permission_desc">Allow AirBeats to display over other apps to identify songs on Instagram, TikTok, and YouTube Shorts without leaving the app.</string>
+    <string name="music_recognition_overlay_grant_permission">Enable Floating Overlay</string>
 </resources>
 
 

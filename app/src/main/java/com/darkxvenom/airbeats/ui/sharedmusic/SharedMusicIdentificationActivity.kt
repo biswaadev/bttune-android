@@ -36,16 +36,22 @@ class SharedMusicIdentificationActivity : ComponentActivity() {
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
     private var isServiceBound = false
+    private var pendingAutoPlaySong: com.darkxvenom.airbeats.providers.ProviderSong? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             if (service is MusicService.MusicBinder) {
-                playerConnection = PlayerConnection(
+                val pc = PlayerConnection(
                     this@SharedMusicIdentificationActivity,
                     service,
                     database,
                     lifecycleScope
                 )
+                playerConnection = pc
+                pendingAutoPlaySong?.let { song ->
+                    viewModel.playSong(song, pc)
+                    pendingAutoPlaySong = null
+                }
             }
         }
 
@@ -76,11 +82,30 @@ class SharedMusicIdentificationActivity : ComponentActivity() {
              .onFailure { Timber.e(it, "Failed to bind MusicService") }
         }
 
-        val sharedContents = ShareIntentParser.parse(this, intent)
-        val initialContent: SharedContent? = sharedContents.firstOrNull()
-
-        if (initialContent != null) {
-            viewModel.processSharedContent(initialContent)
+        val identifiedTitle = intent.getStringExtra(EXTRA_IDENTIFIED_TITLE)
+        val shouldAutoPlay = intent.getBooleanExtra(EXTRA_AUTO_PLAY, false)
+        val initialContent: SharedContent? = if (!identifiedTitle.isNullOrBlank()) {
+            val artist = intent.getStringExtra(EXTRA_IDENTIFIED_ARTIST)
+            val album = intent.getStringExtra(EXTRA_IDENTIFIED_ALBUM)
+            val artUrl = intent.getStringExtra(EXTRA_IDENTIFIED_ART_URL)
+            viewModel.loadIdentifiedSong(identifiedTitle, artist, album, artUrl) { bestMatch ->
+                if (shouldAutoPlay) {
+                    val pc = playerConnection ?: PlayerConnection.instance
+                    if (pc != null) {
+                        viewModel.playSong(bestMatch, pc)
+                    } else {
+                        pendingAutoPlaySong = bestMatch
+                    }
+                }
+            }
+            null
+        } else {
+            val sharedContents = ShareIntentParser.parse(this, intent)
+            val content = sharedContents.firstOrNull()
+            if (content != null) {
+                viewModel.processSharedContent(content)
+            }
+            content
         }
 
         setContent {
@@ -112,11 +137,37 @@ class SharedMusicIdentificationActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val sharedContents = ShareIntentParser.parse(this, intent)
-        val initialContent: SharedContent? = sharedContents.firstOrNull()
-        if (initialContent != null) {
-            viewModel.processSharedContent(initialContent)
+        val identifiedTitle = intent.getStringExtra(EXTRA_IDENTIFIED_TITLE)
+        val shouldAutoPlay = intent.getBooleanExtra(EXTRA_AUTO_PLAY, false)
+        if (!identifiedTitle.isNullOrBlank()) {
+            val artist = intent.getStringExtra(EXTRA_IDENTIFIED_ARTIST)
+            val album = intent.getStringExtra(EXTRA_IDENTIFIED_ALBUM)
+            val artUrl = intent.getStringExtra(EXTRA_IDENTIFIED_ART_URL)
+            viewModel.loadIdentifiedSong(identifiedTitle, artist, album, artUrl) { bestMatch ->
+                if (shouldAutoPlay) {
+                    val pc = playerConnection ?: PlayerConnection.instance
+                    if (pc != null) {
+                        viewModel.playSong(bestMatch, pc)
+                    } else {
+                        pendingAutoPlaySong = bestMatch
+                    }
+                }
+            }
+        } else {
+            val sharedContents = ShareIntentParser.parse(this, intent)
+            val initialContent: SharedContent? = sharedContents.firstOrNull()
+            if (initialContent != null) {
+                viewModel.processSharedContent(initialContent)
+            }
         }
+    }
+
+    companion object {
+        const val EXTRA_IDENTIFIED_TITLE = "extra_identified_title"
+        const val EXTRA_IDENTIFIED_ARTIST = "extra_identified_artist"
+        const val EXTRA_IDENTIFIED_ALBUM = "extra_identified_album"
+        const val EXTRA_IDENTIFIED_ART_URL = "extra_identified_art_url"
+        const val EXTRA_AUTO_PLAY = "extra_auto_play"
     }
 
     override fun onDestroy() {
