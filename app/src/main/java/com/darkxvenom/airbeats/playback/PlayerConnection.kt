@@ -25,6 +25,7 @@ import com.darkxvenom.airbeats.extensions.metadata
 import com.darkxvenom.airbeats.extensions.toggleRepeatMode
 import com.darkxvenom.airbeats.playback.MusicService.MusicBinder
 import com.darkxvenom.airbeats.playback.queues.Queue
+import com.darkxvenom.airbeats.utils.ListenTogetherPlaybackState
 import com.darkxvenom.airbeats.utils.ListenTogetherSync
 import com.darkxvenom.airbeats.utils.reportException
 import kotlinx.coroutines.CoroutineScope
@@ -371,6 +372,27 @@ class PlayerConnection(
 
     fun playNext(items: List<MediaItem>) {
         try {
+            if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
+                val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToAddTracks == true
+                if (!allowed) {
+                    ListenTogetherSync.notifyDisallowedAction("Adding songs is disabled by the host")
+                    return
+                }
+                val first = items.firstOrNull()?.metadata
+                if (first != null) {
+                    val state = ListenTogetherPlaybackState(
+                        songId = first.id,
+                        title = first.title,
+                        artists = first.artists.map { it.name },
+                        thumbnailUrl = first.thumbnailUrl,
+                        positionMs = 0L,
+                        isPlaying = true,
+                        durationMs = (first.duration.toLong() * 1000L).coerceAtLeast(0L),
+                    )
+                    ListenTogetherSync.sendGuestAction("play_next", extraData = state.toJson())
+                }
+                return
+            }
             Log.d(TAG, "Adding ${items.size} items to play next")
             service.playNext(items)
         } catch (e: Exception) {
@@ -383,6 +405,27 @@ class PlayerConnection(
 
     fun addToQueue(items: List<MediaItem>) {
         try {
+            if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
+                val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToAddTracks == true
+                if (!allowed) {
+                    ListenTogetherSync.notifyDisallowedAction("Adding songs is disabled by the host")
+                    return
+                }
+                val first = items.firstOrNull()?.metadata
+                if (first != null) {
+                    val state = ListenTogetherPlaybackState(
+                        songId = first.id,
+                        title = first.title,
+                        artists = first.artists.map { it.name },
+                        thumbnailUrl = first.thumbnailUrl,
+                        positionMs = 0L,
+                        isPlaying = true,
+                        durationMs = (first.duration.toLong() * 1000L).coerceAtLeast(0L),
+                    )
+                    ListenTogetherSync.sendGuestAction("add_track", extraData = state.toJson())
+                }
+                return
+            }
             Log.d(TAG, "Adding ${items.size} items to queue")
             service.addToQueue(items)
         } catch (e: Exception) {
@@ -427,6 +470,15 @@ class PlayerConnection(
 
     fun seekToNext() {
         try {
+            if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
+                val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
+                if (!allowed) {
+                    ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                    return
+                }
+                ListenTogetherSync.sendGuestAction("skip_next")
+                return
+            }
             Log.d(TAG, "Seeking to next track")
             if (player.hasNextMediaItem()) {
                 player.seekToNext()
@@ -456,6 +508,15 @@ class PlayerConnection(
 
     fun seekToPrevious() {
         try {
+            if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
+                val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
+                if (!allowed) {
+                    ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                    return
+                }
+                ListenTogetherSync.sendGuestAction("skip_previous")
+                return
+            }
             Log.d(TAG, "Seeking to previous track")
             if (player.hasPreviousMediaItem() && player.currentPosition < 3000) {
                 player.seekToPreviousMediaItem()
@@ -482,6 +543,15 @@ class PlayerConnection(
 
     fun togglePlayPause() {
         try {
+            if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
+                val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
+                if (!allowed) {
+                    ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                    return
+                }
+                ListenTogetherSync.sendGuestAction("toggle_play_pause")
+                return
+            }
             if (service.isCasting.value) {
                 service.toggleCastPlayPause()
                 return
@@ -536,6 +606,15 @@ class PlayerConnection(
 
     fun seekTo(positionMs: Long) {
         try {
+            if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
+                val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
+                if (!allowed) {
+                    ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                    return
+                }
+                ListenTogetherSync.sendGuestAction("seek", positionMs)
+                return
+            }
             Log.d(TAG, "Seeking to position: ${positionMs}ms")
             if (service.isCasting.value) {
                 service.seekCastTo(positionMs)

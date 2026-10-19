@@ -110,6 +110,59 @@ object LanTogetherClient {
         }
     }
 
+    suspend fun sendAction(
+        hostAddress: String,
+        participantId: String,
+        action: String,
+        positionMs: Long? = null,
+        extraData: JSONObject? = null,
+    ): ListenTogetherSession = withContext(Dispatchers.IO) {
+        val normalized = normalizeHostAddress(hostAddress)
+        val url = "http://$normalized/together/action"
+        val body = JSONObject()
+            .put("participantId", participantId)
+            .put("action", action)
+        if (positionMs != null) {
+            body.put("positionMs", positionMs)
+        }
+        if (extraData != null) {
+            body.put("extraData", extraData)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .post(body.toString().toRequestBody(jsonMediaType))
+            .build()
+        httpClient.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val errMsg = runCatching { JSONObject(text).optString("error") }.getOrNull()?.takeIf { it.isNotBlank() }
+                    ?: "Action failed: HTTP ${response.code}"
+                throw IllegalStateException(errMsg)
+            }
+            ListenTogetherSession.fromJson(JSONObject(text))
+        }
+    }
+
+    suspend fun updateSettings(
+        hostAddress: String,
+        settings: ListenTogetherSettings,
+    ): ListenTogetherSession = withContext(Dispatchers.IO) {
+        val normalized = normalizeHostAddress(hostAddress)
+        val url = "http://$normalized/together/settings"
+        val body = settings.toJson().put("participantId", "host")
+        val request = Request.Builder()
+            .url(url)
+            .post(body.toString().toRequestBody(jsonMediaType))
+            .build()
+        httpClient.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IllegalStateException("Failed to update LAN settings: HTTP ${response.code}")
+            }
+            ListenTogetherSession.fromJson(JSONObject(text))
+        }
+    }
+
     suspend fun leaveSession(
         hostAddress: String,
         participantId: String,

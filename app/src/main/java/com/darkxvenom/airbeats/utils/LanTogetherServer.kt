@@ -31,13 +31,19 @@ class LanTogetherServer(
     val sessionId: String = UUID.randomUUID().toString().take(8).uppercase(),
     val hostDisplayName: String,
     var audioStreamResolver: (suspend (songId: String) -> ResolvedCastStream?)? = null,
-    var onPlaybackCommand: ((action: String, positionMs: Long?) -> Unit)? = null,
+    var onPlaybackCommand: ((action: String, positionMs: Long?, extraData: JSONObject?) -> Unit)? = null,
 ) : NanoHTTPD(port) {
 
     private val participants = ConcurrentHashMap<String, ListenTogetherParticipant>()
 
     @Volatile
     var playbackState: ListenTogetherPlaybackState? = null
+
+    @Volatile
+    var settings: ListenTogetherSettings = ListenTogetherSettings(
+        allowGuestsToControlPlayback = false,
+        allowGuestsToAddTracks = true,
+    )
 
     @Volatile
     var stateVersion: Long = 1L
@@ -194,6 +200,22 @@ class LanTogetherServer(
                     val action = body.optString("action")
                     val positionMs = if (body.has("positionMs")) body.optLong("positionMs") else null
                     val reqParticipantId = body.optString("participantId").ifBlank { "guest" }
+                    val extraData = body.optJSONObject("extraData")
+                    val isHostSender = reqParticipantId == "host" || reqParticipantId == controllerId
+
+                    if (action in listOf("play", "pause", "resume", "toggle_play_pause", "seek", "next", "skip_next", "previous", "skip_previous")) {
+                        if (!isHostSender && !settings.allowGuestsToControlPlayback) {
+                            val errJson = JSONObject().put("error", "Playback controls are disabled by the host")
+                            return newFixedLengthResponse(Response.Status.FORBIDDEN, "application/json", errJson.toString()).apply { applyCors(this) }
+                        }
+                    }
+
+                    if (action in listOf("add_track", "play_next")) {
+                        if (!isHostSender && !settings.allowGuestsToAddTracks) {
+                            val errJson = JSONObject().put("error", "Adding songs is disabled by the host")
+                            return newFixedLengthResponse(Response.Status.FORBIDDEN, "application/json", errJson.toString()).apply { applyCors(this) }
+                        }
+                    }
 
                     if (action.isNotBlank()) {
                         lastActionTime = System.currentTimeMillis()
@@ -203,7 +225,8 @@ class LanTogetherServer(
                                     playbackState = current.copy(
                                         isPlaying = true,
                                         positionMs = positionMs ?: current.positionMs,
-                                        updatedAt = System.currentTimeMillis()
+                                        updatedAt = System.currentTimeMillis(),
+                                        settings = settings
                                     )
                                     stateVersion++
                                 }
@@ -211,7 +234,17 @@ class LanTogetherServer(
                                     playbackState = current.copy(
                                         isPlaying = false,
                                         positionMs = positionMs ?: current.positionMs,
-                                        updatedAt = System.currentTimeMillis()
+                                        updatedAt = System.currentTimeMillis(),
+                                        settings = settings
+                                    )
+                                    stateVersion++
+                                }
+                                "toggle_play_pause" -> {
+                                    playbackState = current.copy(
+                                        isPlaying = !current.isPlaying,
+                                        positionMs = positionMs ?: current.positionMs,
+                                        updatedAt = System.currentTimeMillis(),
+                                        settings = settings
                                     )
                                     stateVersion++
                                 }
@@ -219,16 +252,37 @@ class LanTogetherServer(
                                     if (positionMs != null) {
                                         playbackState = current.copy(
                                             positionMs = positionMs,
-                                            updatedAt = System.currentTimeMillis()
+                                            updatedAt = System.currentTimeMillis(),
+                                            settings = settings
                                         )
                                         stateVersion++
                                     }
                                 }
+                                else -> {
+                                    stateVersion++
+                                }
                             }
                         }
-                        onPlaybackCommand?.invoke(action, positionMs)
+                        onPlaybackCommand?.invoke(action, positionMs, extraData)
                     }
 
+                    val currentSession = buildSessionSnapshot(participantId = reqParticipantId)
+                    jsonResponse(currentSession.toJson())
+                }
+
+                uri == "/together/settings" && method == Method.POST -> {
+                    val body = parseBodyJson(session)
+                    val reqParticipantId = body.optString("participantId").ifBlank { "guest" }
+                    if (reqParticipantId == "host" || reqParticipantId == controllerId) {
+                        val allowPlayback = body.optBoolean("allowGuestsToControlPlayback", settings.allowGuestsToControlPlayback)
+                        val allowTracks = body.optBoolean("allowGuestsToAddTracks", settings.allowGuestsToAddTracks)
+                        settings = ListenTogetherSettings(
+                            allowGuestsToControlPlayback = allowPlayback,
+                            allowGuestsToAddTracks = allowTracks
+                        )
+                        playbackState = playbackState?.copy(settings = settings)
+                        stateVersion++
+                    }
                     val currentSession = buildSessionSnapshot(participantId = reqParticipantId)
                     jsonResponse(currentSession.toJson())
                 }
@@ -393,6 +447,10 @@ class LanTogetherServer(
         addHeader("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length")
     }
 
+    fun kickParticipant(participantId: String) {
+        participants.remove(participantId)
+    }
+
     fun buildSessionSnapshot(participantId: String): ListenTogetherSession {
         return ListenTogetherSession(
             code = "$hostIp:$port",
@@ -405,7 +463,8 @@ class LanTogetherServer(
             controllerName = participants[controllerId]?.name ?: hostDisplayName,
             stateVersion = stateVersion,
             serverNow = System.currentTimeMillis(),
-            state = playbackState
+            state = playbackState?.copy(settings = settings),
+            settings = settings,
         )
     }
 

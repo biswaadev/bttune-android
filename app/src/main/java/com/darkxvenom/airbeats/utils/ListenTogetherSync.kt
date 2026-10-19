@@ -1,6 +1,7 @@
 package com.darkxvenom.airbeats.utils
 
 import android.content.Context
+import com.darkxvenom.airbeats.extensions.toMediaItem
 import com.darkxvenom.airbeats.innertube.models.WatchEndpoint
 import com.darkxvenom.airbeats.playback.PlayerConnection
 import com.darkxvenom.airbeats.playback.queues.YouTubeQueue
@@ -12,6 +13,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.util.UUID
 import kotlin.math.abs
 
 enum class ListenTogetherConnectionMode {
@@ -20,11 +23,11 @@ enum class ListenTogetherConnectionMode {
 }
 
 object ListenTogetherSync {
-    private const val SYNC_MS = 260L
-    private const val CONTROLLER_PUBLISH_MS = 520L
-    private const val SEEK_TOLERANCE_MS = 650L
-    private const val USER_SEEK_TOLERANCE_MS = 1700L
-    private const val APPLY_GRACE_MS = 900L
+    private const val SYNC_MS = 280L
+    private const val CONTROLLER_PUBLISH_MS = 600L
+    private const val SEEK_TOLERANCE_MS = 1000L
+    private const val ONLINE_SEEK_TOLERANCE_MS = 1800L
+    private const val APPLY_GRACE_MS = 2500L
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var syncJob: Job? = null
@@ -32,7 +35,8 @@ object ListenTogetherSync {
     private var playerConnection: PlayerConnection? = null
     private var lastAppliedVersion = 0L
     private var lastControllerPublishAt = 0L
-    private var suppressLocalPublishUntil = 0L
+    private var suppressLocalSyncUntil = 0L
+    private var lastHandledActionId: String? = null
 
     private val _session = MutableStateFlow<ListenTogetherSession?>(null)
     val session = _session.asStateFlow()
@@ -218,7 +222,7 @@ object ListenTogetherSync {
                     isPlaying = connection.player.playWhenReady,
                     durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
                 )
-                server.onPlaybackCommand = { action, positionMs ->
+                server.onPlaybackCommand = { action, positionMs, extraData ->
                     scope.launch(Dispatchers.Main) {
                         val player = connection.player
                         when (action) {
@@ -232,9 +236,30 @@ object ListenTogetherSync {
                                     player.pause()
                                 }
                             }
+                            "toggle_play_pause" -> {
+                                connection.togglePlayPause()
+                            }
                             "seek" -> {
                                 if (positionMs != null && positionMs >= 0) {
                                     player.seekTo(positionMs)
+                                }
+                            }
+                            "next", "skip_next" -> {
+                                connection.seekToNext()
+                            }
+                            "previous", "skip_previous" -> {
+                                connection.seekToPrevious()
+                            }
+                            "add_track" -> {
+                                extraData?.let { json ->
+                                    val track = ListenTogetherPlaybackState.fromJson(json)
+                                    connection.addToQueue(track.toMediaMetadata().toMediaItem())
+                                }
+                            }
+                            "play_next" -> {
+                                extraData?.let { json ->
+                                    val track = ListenTogetherPlaybackState.fromJson(json)
+                                    connection.playNext(track.toMediaMetadata().toMediaItem())
                                 }
                             }
                         }
@@ -378,7 +403,8 @@ object ListenTogetherSync {
                         positionMs = pos,
                         isPlaying = isPlaying,
                         durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
-                        updatedAt = System.currentTimeMillis()
+                        updatedAt = System.currentTimeMillis(),
+                        settings = server.settings,
                     )
                     server.stateVersion++
                 }
@@ -403,41 +429,12 @@ object ListenTogetherSync {
                     return@onSuccess
                 }
 
-                if (now > suppressLocalPublishUntil && localUserChangedPlayback(connection, remoteSession)) {
-                    publishLocalStateLan(connection, host, keptSession)
-                } else {
+                if (now > suppressLocalSyncUntil) {
                     softCorrectPosition(connection, remoteSession)
                 }
             }.onFailure {
                 _message.value = it.message
             }
-        }
-    }
-
-    private suspend fun publishLocalStateLan(
-        connection: PlayerConnection,
-        hostAddress: String,
-        session: ListenTogetherSession,
-    ) {
-        val metadata = connection.mediaMetadata.value ?: return
-        runCatching {
-            LanTogetherClient.updateState(
-                hostAddress = hostAddress,
-                participantId = session.participantId,
-                state = ListenTogetherPlaybackState(
-                    songId = metadata.id,
-                    title = metadata.title,
-                    artists = metadata.artists.map { it.name },
-                    thumbnailUrl = metadata.thumbnailUrl,
-                    positionMs = connection.player.currentPosition,
-                    isPlaying = connection.player.playWhenReady,
-                )
-            )
-        }.onSuccess {
-            _session.value = it.copy(participantId = session.participantId)
-            lastAppliedVersion = it.stateVersion
-        }.onFailure {
-            _message.value = it.message
         }
     }
 
@@ -452,7 +449,54 @@ object ListenTogetherSync {
             _session.value = keptSession
             val remoteState = remoteSession.state ?: return@onSuccess
             val now = System.currentTimeMillis()
-            val isController = remoteSession.controllerId == session.participantId
+
+            if (_isHost.value) {
+                val cmd = remoteState.actionCommand
+                val actionId = remoteState.actionId
+                if (!cmd.isNullOrBlank() && actionId != null && actionId != lastHandledActionId) {
+                    lastHandledActionId = actionId
+                    val allowed = if (cmd in listOf("play", "pause", "toggle_play_pause", "seek", "next", "skip_next", "previous", "skip_previous")) {
+                        remoteSession.settings.allowGuestsToControlPlayback
+                    } else if (cmd in listOf("add_track", "play_next")) {
+                        remoteSession.settings.allowGuestsToAddTracks
+                    } else false
+
+                    if (allowed) {
+                        when (cmd) {
+                            "play" -> connection.player.play()
+                            "pause" -> connection.player.pause()
+                            "toggle_play_pause" -> connection.togglePlayPause()
+                            "seek" -> if (remoteState.positionMs >= 0) connection.player.seekTo(remoteState.positionMs)
+                            "next", "skip_next" -> connection.seekToNext()
+                            "previous", "skip_previous" -> connection.seekToPrevious()
+                            "add_track" -> {
+                                remoteState.actionPayload?.let { payload ->
+                                    runCatching {
+                                        val json = JSONObject(payload)
+                                        val track = ListenTogetherPlaybackState.fromJson(json)
+                                        connection.addToQueue(track.toMediaMetadata().toMediaItem())
+                                    }
+                                }
+                            }
+                            "play_next" -> {
+                                remoteState.actionPayload?.let { payload ->
+                                    runCatching {
+                                        val json = JSONObject(payload)
+                                        val track = ListenTogetherPlaybackState.fromJson(json)
+                                        connection.playNext(track.toMediaMetadata().toMediaItem())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (now - lastControllerPublishAt >= CONTROLLER_PUBLISH_MS) {
+                    publishLocalStateOnline(connection, keptSession)
+                    lastControllerPublishAt = now
+                }
+                return@onSuccess
+            }
 
             if (remoteSession.stateVersion > lastAppliedVersion) {
                 applyRemoteState(connection, remoteSession)
@@ -460,31 +504,12 @@ object ListenTogetherSync {
                 return@onSuccess
             }
 
-            if (isController && now - lastControllerPublishAt >= CONTROLLER_PUBLISH_MS) {
-                publishLocalStateOnline(connection, keptSession)
-                lastControllerPublishAt = now
-                return@onSuccess
-            }
-
-            if (now > suppressLocalPublishUntil && localUserChangedPlayback(connection, remoteSession)) {
-                publishLocalStateOnline(connection, keptSession)
-            } else if (!isController) {
+            if (now > suppressLocalSyncUntil) {
                 softCorrectPosition(connection, remoteSession)
             }
         }.onFailure {
             _message.value = it.message
         }
-    }
-
-    private fun localUserChangedPlayback(
-        connection: PlayerConnection,
-        remoteSession: ListenTogetherSession,
-    ): Boolean {
-        val remoteState = remoteSession.state ?: return false
-        val localSongId = connection.player.currentMediaItem?.mediaId
-        if (localSongId != null && localSongId != remoteState.songId) return true
-        if (connection.player.playWhenReady != remoteState.isPlaying) return true
-        return abs(connection.player.currentPosition - expectedPosition(remoteSession)) > USER_SEEK_TOLERANCE_MS
     }
 
     private suspend fun publishLocalStateOnline(
@@ -504,6 +529,8 @@ object ListenTogetherSync {
                         thumbnailUrl = metadata.thumbnailUrl,
                         positionMs = connection.player.currentPosition,
                         isPlaying = connection.player.playWhenReady,
+                        durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
+                        settings = session.settings,
                     )
             )
         }.onSuccess {
@@ -520,17 +547,21 @@ object ListenTogetherSync {
         remoteSession: ListenTogetherSession,
     ) {
         val remoteState = remoteSession.state ?: return
-        suppressLocalPublishUntil = System.currentTimeMillis() + APPLY_GRACE_MS
+        suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
 
-        if (connection.player.currentMediaItem?.mediaId != remoteState.songId) {
+        val currentSongId = connection.player.currentMediaItem?.mediaId
+        if (currentSongId != remoteState.songId && remoteState.songId.isNotBlank()) {
             val metadata = remoteState.toMediaMetadata()
             connection.playQueue(YouTubeQueue(WatchEndpoint(videoId = remoteState.songId), metadata))
-            delay(260)
+            delay(400)
         }
 
-        val target = expectedPosition(remoteSession)
-        if (abs(connection.player.currentPosition - target) > SEEK_TOLERANCE_MS) {
-            connection.player.seekTo(target)
+        if (connection.player.playbackState != androidx.media3.common.Player.STATE_BUFFERING) {
+            val target = expectedPosition(remoteSession)
+            val threshold = if (_connectionMode.value == ListenTogetherConnectionMode.LAN) SEEK_TOLERANCE_MS else ONLINE_SEEK_TOLERANCE_MS
+            if (abs(connection.player.currentPosition - target) > threshold) {
+                connection.player.seekTo(target)
+            }
         }
 
         if (remoteState.isPlaying && !connection.player.playWhenReady) {
@@ -544,9 +575,14 @@ object ListenTogetherSync {
         connection: PlayerConnection,
         remoteSession: ListenTogetherSession,
     ) {
+        if (connection.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING ||
+            connection.player.playbackState == androidx.media3.common.Player.STATE_IDLE) {
+            return
+        }
         val target = expectedPosition(remoteSession)
-        if (abs(connection.player.currentPosition - target) > SEEK_TOLERANCE_MS * 2) {
-            suppressLocalPublishUntil = System.currentTimeMillis() + APPLY_GRACE_MS
+        val threshold = if (_connectionMode.value == ListenTogetherConnectionMode.LAN) SEEK_TOLERANCE_MS * 2 else ONLINE_SEEK_TOLERANCE_MS * 2
+        if (abs(connection.player.currentPosition - target) > threshold) {
+            suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
             connection.player.seekTo(target)
         }
     }
@@ -560,4 +596,142 @@ object ListenTogetherSync {
             state.positionMs
         }.coerceAtLeast(0)
     }
+
+    fun updateSettings(
+        allowGuestsToControlPlayback: Boolean,
+        allowGuestsToAddTracks: Boolean,
+    ) {
+        if (!_isHost.value) return
+        val newSettings = ListenTogetherSettings(
+            allowGuestsToControlPlayback = allowGuestsToControlPlayback,
+            allowGuestsToAddTracks = allowGuestsToAddTracks,
+        )
+        scope.launch {
+            if (_connectionMode.value == ListenTogetherConnectionMode.LAN) {
+                val server = lanServer ?: return@launch
+                server.settings = newSettings
+                server.stateVersion++
+                _session.value = server.buildSessionSnapshot("host")
+            } else {
+                val session = _session.value ?: return@launch
+                val connection = playerConnection ?: return@launch
+                val metadata = connection.mediaMetadata.value ?: return@launch
+                runCatching {
+                    ListenTogetherClient.updateState(
+                        code = session.code,
+                        participantId = session.participantId,
+                        state = ListenTogetherPlaybackState(
+                            songId = metadata.id,
+                            title = metadata.title,
+                            artists = metadata.artists.map { it.name },
+                            thumbnailUrl = metadata.thumbnailUrl,
+                            positionMs = connection.player.currentPosition,
+                            isPlaying = connection.player.playWhenReady,
+                            durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
+                            settings = newSettings,
+                        )
+                    )
+                }.onSuccess { updated ->
+                    _session.value = updated.copy(participantId = session.participantId)
+                }
+            }
+        }
+    }
+
+    fun kickParticipant(participantId: String) {
+        if (!_isHost.value) return
+        lanServer?.kickParticipant(participantId)
+        val currentSession = _session.value
+        if (currentSession != null) {
+            val updatedList = currentSession.participantList.filter { it.id != participantId }
+            _session.value = currentSession.copy(
+                participants = updatedList.size,
+                participantList = updatedList
+            )
+        }
+    }
+
+    fun sendGuestAction(
+        action: String,
+        positionMs: Long? = null,
+        extraData: JSONObject? = null,
+    ): Boolean {
+        val activeSession = _session.value ?: return false
+        val settings = activeSession.settings
+
+        if (action in listOf("play", "pause", "toggle_play_pause", "seek", "next", "skip_next", "previous", "skip_previous")) {
+            if (!_isHost.value && !settings.allowGuestsToControlPlayback) {
+                _message.value = "Playback controls are disabled by the host"
+                return false
+            }
+        }
+        if (action in listOf("add_track", "play_next")) {
+            if (!_isHost.value && !settings.allowGuestsToAddTracks) {
+                _message.value = "Adding songs is disabled by the host"
+                return false
+            }
+        }
+
+        if (_isHost.value) {
+            val connection = playerConnection ?: return false
+            when (action) {
+                "play" -> connection.player.play()
+                "pause" -> connection.player.pause()
+                "toggle_play_pause" -> connection.togglePlayPause()
+                "seek" -> if (positionMs != null && positionMs >= 0) connection.player.seekTo(positionMs)
+                "next", "skip_next" -> connection.seekToNext()
+                "previous", "skip_previous" -> connection.seekToPrevious()
+            }
+            return true
+        }
+
+        scope.launch {
+            runCatching {
+                if (_connectionMode.value == ListenTogetherConnectionMode.LAN) {
+                    val hostAddr = lanHostAddress ?: return@launch
+                    LanTogetherClient.sendAction(
+                        hostAddress = hostAddr,
+                        participantId = activeSession.participantId,
+                        action = action,
+                        positionMs = positionMs,
+                        extraData = extraData,
+                    )
+                } else {
+                    val currentState = activeSession.state ?: return@launch
+                    val targetPlaying = when (action) {
+                        "play" -> true
+                        "pause" -> false
+                        "toggle_play_pause" -> !currentState.isPlaying
+                        else -> currentState.isPlaying
+                    }
+                    val targetPosition = positionMs ?: currentState.positionMs
+                    val newState = currentState.copy(
+                        isPlaying = targetPlaying,
+                        positionMs = targetPosition,
+                        updatedAt = System.currentTimeMillis(),
+                        actionCommand = action,
+                        actionPayload = extraData?.toString(),
+                        actionId = UUID.randomUUID().toString().take(8),
+                    )
+                    ListenTogetherClient.updateState(
+                        code = activeSession.code,
+                        participantId = activeSession.participantId,
+                        state = newState,
+                    )
+                }
+            }.onSuccess { updatedSession ->
+                _session.value = updatedSession.copy(participantId = activeSession.participantId)
+                lastAppliedVersion = updatedSession.stateVersion
+                suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
+            }.onFailure { e ->
+                _message.value = e.message ?: "Failed to send action"
+            }
+        }
+        return true
+    }
+
+    fun notifyDisallowedAction(notice: String) {
+        _message.value = notice
+    }
 }
+
