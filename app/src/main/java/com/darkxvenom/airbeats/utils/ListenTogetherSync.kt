@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import java.util.UUID
 import kotlin.math.abs
@@ -227,25 +228,29 @@ object ListenTogetherSync {
                     durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
                 )
                 server.queueProvider = {
-                    val player = connection.player
-                    if (!player.currentTimeline.isEmpty) {
-                        val count = player.mediaItemCount
-                        val currentIndex = player.currentMediaItemIndex
-                        val list = mutableListOf<JSONObject>()
-                        for (i in 0 until count) {
-                            val item = player.getMediaItemAt(i)
-                            val meta = item.mediaMetadata
-                            list.add(JSONObject().apply {
-                                put("index", i)
-                                put("id", item.mediaId)
-                                put("title", meta.title?.toString() ?: "Unknown Song")
-                                put("artist", meta.artist?.toString() ?: "")
-                                put("thumbnailUrl", meta.artworkUri?.toString() ?: "")
-                                put("isCurrent", i == currentIndex)
-                            })
+                    runCatching {
+                        runBlocking(Dispatchers.Main) {
+                            val player = connection.player
+                            if (!player.currentTimeline.isEmpty) {
+                                val count = player.mediaItemCount
+                                val currentIndex = player.currentMediaItemIndex
+                                val list = mutableListOf<JSONObject>()
+                                for (i in 0 until count) {
+                                    val item = player.getMediaItemAt(i)
+                                    val meta = item.mediaMetadata
+                                    list.add(JSONObject().apply {
+                                        put("index", i)
+                                        put("id", item.mediaId)
+                                        put("title", meta.title?.toString() ?: "Unknown Song")
+                                        put("artist", meta.artist?.toString() ?: "")
+                                        put("thumbnailUrl", meta.artworkUri?.toString() ?: "")
+                                        put("isCurrent", i == currentIndex)
+                                    })
+                                }
+                                list
+                            } else emptyList()
                         }
-                        list
-                    } else emptyList()
+                    }.getOrElse { emptyList() }
                 }
                 server.onPlaybackCommand = { action, positionMs, extraData ->
                     scope.launch(Dispatchers.Main) {
