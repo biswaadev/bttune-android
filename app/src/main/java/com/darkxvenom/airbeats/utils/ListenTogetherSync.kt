@@ -226,6 +226,27 @@ object ListenTogetherSync {
                     isPlaying = connection.player.playWhenReady,
                     durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
                 )
+                server.queueProvider = {
+                    val player = connection.player
+                    if (!player.currentTimeline.isEmpty) {
+                        val count = player.mediaItemCount
+                        val currentIndex = player.currentMediaItemIndex
+                        val list = mutableListOf<JSONObject>()
+                        for (i in 0 until count) {
+                            val item = player.getMediaItemAt(i)
+                            val meta = item.mediaMetadata
+                            list.add(JSONObject().apply {
+                                put("index", i)
+                                put("id", item.mediaId)
+                                put("title", meta.title?.toString() ?: "Unknown Song")
+                                put("artist", meta.artist?.toString() ?: "")
+                                put("thumbnailUrl", meta.artworkUri?.toString() ?: "")
+                                put("isCurrent", i == currentIndex)
+                            })
+                        }
+                        list
+                    } else emptyList()
+                }
                 server.onPlaybackCommand = { action, positionMs, extraData ->
                     scope.launch(Dispatchers.Main) {
                         val player = connection.player
@@ -253,6 +274,22 @@ object ListenTogetherSync {
                             }
                             "previous", "skip_previous" -> {
                                 connection.seekToPrevious()
+                            }
+                            "play_index", "play_song", "jump_to" -> {
+                                val targetIndex = extraData?.optInt("index", -1) ?: -1
+                                val targetSongId = extraData?.optString("songId")
+                                if (targetIndex >= 0 && targetIndex < player.mediaItemCount) {
+                                    player.seekToDefaultPosition(targetIndex)
+                                    player.play()
+                                } else if (!targetSongId.isNullOrBlank()) {
+                                    for (i in 0 until player.mediaItemCount) {
+                                        if (player.getMediaItemAt(i).mediaId == targetSongId) {
+                                            player.seekToDefaultPosition(i)
+                                            player.play()
+                                            break
+                                        }
+                                    }
+                                }
                             }
                             "add_track" -> {
                                 extraData?.let { json ->
