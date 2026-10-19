@@ -612,7 +612,11 @@ class PlayerConnection(
                     ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
                     return
                 }
-                ListenTogetherSync.sendGuestAction("seek", positionMs)
+                val safeDuration = player.duration.coerceAtLeast(0L)
+                val targetPosition = if (safeDuration > 0L) positionMs.coerceIn(0L, safeDuration) else positionMs.coerceAtLeast(0L)
+                player.seekTo(targetPosition)
+                _currentPosition.value = targetPosition
+                ListenTogetherSync.sendGuestAction("seek", targetPosition)
                 return
             }
             Log.d(TAG, "Seeking to position: ${positionMs}ms")
@@ -621,7 +625,10 @@ class PlayerConnection(
                 _currentPosition.value = positionMs
                 return
             }
-            player.seekTo(positionMs.coerceIn(0, player.duration))
+            val safeDuration = player.duration.coerceAtLeast(0L)
+            val targetPosition = if (safeDuration > 0L) positionMs.coerceIn(0L, safeDuration) else positionMs.coerceAtLeast(0L)
+            player.seekTo(targetPosition)
+            _currentPosition.value = targetPosition
         } catch (e: Exception) {
             Log.e(TAG, "Error seeking to position", e)
             reportException(e)

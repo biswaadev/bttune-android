@@ -1,6 +1,7 @@
 package com.darkxvenom.airbeats.utils
 
 import android.content.Context
+import android.util.Log
 import com.darkxvenom.airbeats.extensions.toMediaItem
 import com.darkxvenom.airbeats.innertube.models.WatchEndpoint
 import com.darkxvenom.airbeats.playback.PlayerConnection
@@ -24,6 +25,7 @@ enum class ListenTogetherConnectionMode {
 }
 
 object ListenTogetherSync {
+    private const val TAG = "ListenTogetherSync"
     private const val SYNC_MS = 280L
     private const val CONTROLLER_PUBLISH_MS = 600L
     private const val SEEK_TOLERANCE_MS = 1000L
@@ -51,6 +53,26 @@ object ListenTogetherSync {
 
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
+
+    fun setDisplayMessage(msg: String?) {
+        if (msg.isNullOrBlank()) {
+            _message.value = null
+            return
+        }
+        val lower = msg.lowercase()
+        val isTechnicalNoise = lower.contains("cancelled") ||
+                lower.contains("timeout") ||
+                lower.contains("left session") ||
+                lower.contains("socket") ||
+                lower.contains("broken pipe") ||
+                lower.contains("reset by peer") ||
+                lower.contains("eofexception") ||
+                lower.contains("standalonecoroutine") ||
+                lower.contains("jobcancellationexception")
+        if (!isTechnicalNoise) {
+            _message.value = msg
+        }
+    }
 
     private val _displayName = MutableStateFlow(ListenTogetherStore.defaultName())
     val displayName = _displayName.asStateFlow()
@@ -165,10 +187,10 @@ object ListenTogetherSync {
                 _connectionMode.value = ListenTogetherConnectionMode.ONLINE
                 lastAppliedVersion = it.stateVersion
                 ListenTogetherStore.save(context, it, _displayName.value, true, isLan = false)
-                _message.value = "Session created"
+                setDisplayMessage("Session created")
                 restartSync()
             }.onFailure {
-                _message.value = it.message
+                setDisplayMessage(it.message)
             }
         }
     }
@@ -184,10 +206,10 @@ object ListenTogetherSync {
                 _connectionMode.value = ListenTogetherConnectionMode.ONLINE
                 lastAppliedVersion = 0L
                 ListenTogetherStore.save(context, it, _displayName.value, false, isLan = false)
-                _message.value = "Joined session"
+                setDisplayMessage("Joined session")
                 restartSync()
             }.onFailure {
-                _message.value = it.message
+                setDisplayMessage(it.message)
             }
         }
     }
@@ -329,10 +351,10 @@ object ListenTogetherSync {
                     isLan = true,
                     hostAddress = "$localIp:$port"
                 )
-                _message.value = "LAN host started on $localIp:$port"
+                setDisplayMessage("LAN host started on $localIp:$port")
                 restartSync()
             } catch (e: Exception) {
-                _message.value = "Failed to start LAN host: ${e.message}"
+                setDisplayMessage("Failed to start LAN host: ${e.message}")
             }
         }
     }
@@ -358,10 +380,10 @@ object ListenTogetherSync {
                     isLan = true,
                     hostAddress = cleanAddress
                 )
-                _message.value = "Joined LAN session"
+                setDisplayMessage("Joined LAN session")
                 restartSync()
             }.onFailure {
-                _message.value = it.message ?: "Failed to connect to LAN host"
+                setDisplayMessage(it.message ?: "Failed to connect to LAN host")
             }
         }
     }
@@ -398,7 +420,7 @@ object ListenTogetherSync {
             if (context != null) ListenTogetherStore.clear(context)
             _session.value = null
             _isHost.value = false
-            _message.value = "Left session"
+            _message.value = null
             syncJob?.cancel()
         }
     }
@@ -506,7 +528,23 @@ object ListenTogetherSync {
         runCatching {
             ListenTogetherClient.getSession(session.code)
         }.onSuccess { remoteSession ->
-            val keptSession = remoteSession.copy(participantId = session.participantId)
+            val preservedSettings = _session.value?.settings ?: session.settings
+            val resolvedSettings = if (_isHost.value) {
+                preservedSettings
+            } else {
+                if (remoteSession.settings != ListenTogetherSettings()) {
+                    remoteSession.settings
+                } else if (remoteSession.state?.settings != null && remoteSession.state.settings != ListenTogetherSettings()) {
+                    remoteSession.state.settings
+                } else {
+                    remoteSession.settings
+                }
+            }
+            val keptSession = remoteSession.copy(
+                participantId = session.participantId,
+                settings = resolvedSettings,
+                state = remoteSession.state?.copy(settings = resolvedSettings) ?: remoteSession.state
+            )
             _session.value = keptSession
             val remoteState = remoteSession.state ?: return@onSuccess
             val now = System.currentTimeMillis()
@@ -569,7 +607,7 @@ object ListenTogetherSync {
                 softCorrectPosition(connection, remoteSession)
             }
         }.onFailure {
-            _message.value = it.message
+            Log.w(TAG, "syncOnceOnline failed: ${it.message}")
         }
     }
 
@@ -594,12 +632,16 @@ object ListenTogetherSync {
                         settings = session.settings,
                     )
             )
-        }.onSuccess {
-            _session.value = it.copy(participantId = session.participantId)
+            val preservedSettings = _session.value?.settings ?: session.settings
+            _session.value = it.copy(
+                participantId = session.participantId,
+                settings = preservedSettings,
+                state = it.state?.copy(settings = preservedSettings) ?: it.state
+            )
             lastAppliedVersion = it.stateVersion
             lastControllerPublishAt = System.currentTimeMillis()
         }.onFailure {
-            _message.value = it.message
+            Log.w(TAG, "publishLocalStateOnline failed: ${it.message}")
         }
     }
 
@@ -711,6 +753,13 @@ object ListenTogetherSync {
             allowGuestsToControlPlayback = allowGuestsToControlPlayback,
             allowGuestsToAddTracks = allowGuestsToAddTracks,
         )
+        val currentSession = _session.value ?: return
+        val updatedState = currentSession.state?.copy(settings = newSettings)
+        _session.value = currentSession.copy(
+            settings = newSettings,
+            state = updatedState
+        )
+
         scope.launch {
             if (_connectionMode.value == ListenTogetherConnectionMode.LAN) {
                 val server = lanServer ?: return@launch
@@ -719,25 +768,37 @@ object ListenTogetherSync {
                 _session.value = server.buildSessionSnapshot("host")
             } else {
                 val session = _session.value ?: return@launch
-                val connection = playerConnection ?: return@launch
-                val metadata = connection.mediaMetadata.value ?: return@launch
+                val connection = playerConnection
+                val metadata = connection?.mediaMetadata?.value
+                val stateToSend = if (metadata != null && connection != null) {
+                    ListenTogetherPlaybackState(
+                        songId = metadata.id,
+                        title = metadata.title,
+                        artists = metadata.artists.map { it.name },
+                        thumbnailUrl = metadata.thumbnailUrl,
+                        positionMs = connection.player.currentPosition,
+                        isPlaying = connection.player.playWhenReady,
+                        durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
+                        settings = newSettings,
+                    )
+                } else {
+                    session.state?.copy(settings = newSettings) ?: ListenTogetherPlaybackState(settings = newSettings)
+                }
+
                 runCatching {
                     ListenTogetherClient.updateState(
                         code = session.code,
                         participantId = session.participantId,
-                        state = ListenTogetherPlaybackState(
-                            songId = metadata.id,
-                            title = metadata.title,
-                            artists = metadata.artists.map { it.name },
-                            thumbnailUrl = metadata.thumbnailUrl,
-                            positionMs = connection.player.currentPosition,
-                            isPlaying = connection.player.playWhenReady,
-                            durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
-                            settings = newSettings,
-                        )
+                        state = stateToSend
                     )
                 }.onSuccess { updated ->
-                    _session.value = updated.copy(participantId = session.participantId)
+                    _session.value = updated.copy(
+                        participantId = session.participantId,
+                        settings = newSettings,
+                        state = updated.state?.copy(settings = newSettings) ?: updated.state
+                    )
+                }.onFailure {
+                    Log.w(TAG, "updateSettings online failed: ${it.message}")
                 }
             }
         }
@@ -766,13 +827,13 @@ object ListenTogetherSync {
 
         if (action in listOf("play", "pause", "toggle_play_pause", "seek", "next", "skip_next", "previous", "skip_previous")) {
             if (!_isHost.value && !settings.allowGuestsToControlPlayback) {
-                _message.value = "Playback controls are disabled by the host"
+                setDisplayMessage("Playback controls are disabled by the host")
                 return false
             }
         }
         if (action in listOf("add_track", "play_next")) {
             if (!_isHost.value && !settings.allowGuestsToAddTracks) {
-                _message.value = "Adding songs is disabled by the host"
+                setDisplayMessage("Adding songs is disabled by the host")
                 return false
             }
         }
@@ -789,6 +850,10 @@ object ListenTogetherSync {
             }
             return true
         }
+
+        // Suppress local sync immediately for 4000ms so background sync (280ms)
+        // does not snap the guest back before the host processes the action!
+        suppressLocalSyncUntil = System.currentTimeMillis() + 4000L
 
         scope.launch {
             runCatching {
@@ -829,14 +894,14 @@ object ListenTogetherSync {
                 lastAppliedVersion = updatedSession.stateVersion
                 suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
             }.onFailure { e ->
-                _message.value = e.message ?: "Failed to send action"
+                setDisplayMessage(e.message ?: "Failed to send action")
             }
         }
         return true
     }
 
     fun notifyDisallowedAction(notice: String) {
-        _message.value = notice
+        setDisplayMessage(notice)
     }
 }
 

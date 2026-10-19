@@ -31,6 +31,7 @@ object ListenTogetherClient {
             JSONObject()
                 .put("name", displayName)
                 .put("state", state.toJson())
+                .put("settings", state.settings.toJson())
         ) { body ->
             ListenTogetherSession.fromJson(body)
         }
@@ -61,6 +62,7 @@ object ListenTogetherClient {
             JSONObject()
                 .put("participantId", participantId)
                 .put("state", state.toJson())
+                .put("settings", state.settings.toJson())
         ) { body ->
             ListenTogetherSession.fromJson(body)
         }
