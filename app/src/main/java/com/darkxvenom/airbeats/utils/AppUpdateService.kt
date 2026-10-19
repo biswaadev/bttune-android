@@ -300,14 +300,20 @@ class AppUpdateService : Service() {
             return if (apk.exists() && apk.length() > 0) apk else null
         }
 
+        fun canRequestPackageInstalls(context: Context): Boolean =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
+            } else {
+                true
+            }
+
         fun openInstaller(context: Context, apk: File) {
             try {
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", apk)
-                val canInstall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
-                } else {
-                    true
+                if (!apk.exists() || apk.length() == 0L) {
+                    Timber.w("APK file does not exist or is empty")
+                    return
                 }
+                val canInstall = canRequestPackageInstalls(context)
                 if (!canInstall && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:${context.packageName}")
@@ -316,6 +322,7 @@ class AppUpdateService : Service() {
                     context.startActivity(intent)
                     return
                 }
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", apk)
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, "application/vnd.android.package-archive")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)

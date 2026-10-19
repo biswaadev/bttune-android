@@ -168,8 +168,15 @@ data class ListenTogetherSession(
             .put("settings", settings.toJson())
 
     companion object {
-        fun fromJson(json: JSONObject): ListenTogetherSession =
-            ListenTogetherSession(
+        fun fromJson(json: JSONObject): ListenTogetherSession {
+            val parsedState = json.optJSONObject("state")?.let(ListenTogetherPlaybackState::fromJson)
+            val parsedSettings =
+                parsedState?.settings
+                    ?: json.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
+                    ?: json.optJSONObject("state")?.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
+                    ?: ListenTogetherSettings()
+
+            return ListenTogetherSession(
                 code = json.optString("code"),
                 participantId = json.optString("participantId"),
                 joinUrl = json.optString("joinUrl"),
@@ -185,12 +192,10 @@ data class ListenTogetherSession(
                 controllerName = json.optString("controllerName").ifBlank { "AirBeats listener" },
                 stateVersion = json.optLong("stateVersion", 0L),
                 serverNow = json.optLong("serverNow", System.currentTimeMillis()),
-                state = json.optJSONObject("state")?.let(ListenTogetherPlaybackState::fromJson),
-                settings =
-                    json.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
-                        ?: json.optJSONObject("state")?.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
-                        ?: ListenTogetherSettings(),
+                state = parsedState,
+                settings = parsedSettings,
             )
+        }
     }
 }
 
@@ -238,11 +243,31 @@ data class ListenTogetherPlaybackState(
             thumbnailUrl = thumbnailUrl,
         )
 
-    fun toJson() =
-        JSONObject()
+    fun toJson(): JSONObject {
+        val metaString = buildString {
+            append(META_PREFIX)
+            append("pb=").append(if (settings.allowGuestsToControlPlayback) "1" else "0")
+            append("&tr=").append(if (settings.allowGuestsToAddTracks) "1" else "0")
+            if (!actionCommand.isNullOrBlank()) {
+                append("&cmd=").append(java.net.URLEncoder.encode(actionCommand, "UTF-8"))
+            }
+            if (!actionPayload.isNullOrBlank()) {
+                append("&pl=").append(java.net.URLEncoder.encode(actionPayload, "UTF-8"))
+            }
+            if (!actionId.isNullOrBlank()) {
+                append("&actId=").append(java.net.URLEncoder.encode(actionId, "UTF-8"))
+            }
+            if (durationMs > 0L) {
+                append("&dur=").append(durationMs)
+            }
+        }
+        val cleanArtists = artists.filterNot { it.startsWith(META_PREFIX) }
+        val finalArtists = JSONArray(cleanArtists + metaString)
+
+        return JSONObject()
             .put("songId", songId)
             .put("title", title)
-            .put("artists", JSONArray(artists))
+            .put("artists", finalArtists)
             .put("thumbnailUrl", thumbnailUrl)
             .put("positionMs", positionMs)
             .put("isPlaying", isPlaying)
@@ -252,28 +277,63 @@ data class ListenTogetherPlaybackState(
             .put("actionCommand", actionCommand)
             .put("actionPayload", actionPayload)
             .put("actionId", actionId)
+    }
 
     companion object {
-        fun fromJson(json: JSONObject): ListenTogetherPlaybackState =
-            ListenTogetherPlaybackState(
+        const val META_PREFIX = "__AB_META__:"
+
+        fun fromJson(json: JSONObject): ListenTogetherPlaybackState {
+            var parsedSettings: ListenTogetherSettings? =
+                json.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
+            var parsedCommand: String? = json.optString("actionCommand").takeIf { it.isNotBlank() }
+            var parsedPayload: String? = json.optString("actionPayload").takeIf { it.isNotBlank() }
+            var parsedActionId: String? = json.optString("actionId").takeIf { it.isNotBlank() }
+            var parsedDuration: Long = json.optLong("durationMs", 0L)
+
+            val cleanArtists = mutableListOf<String>()
+            json.optJSONArray("artists")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val item = array.optString(i)
+                    if (item.startsWith(META_PREFIX)) {
+                        val query = item.removePrefix(META_PREFIX)
+                        val params = query.split("&").associate { param ->
+                            val parts = param.split("=", limit = 2)
+                            if (parts.size == 2) parts[0] to runCatching { java.net.URLDecoder.decode(parts[1], "UTF-8") }.getOrDefault(parts[1])
+                            else parts[0] to ""
+                        }
+                        val pb = params["pb"]
+                        val tr = params["tr"]
+                        if (pb != null || tr != null) {
+                            parsedSettings = ListenTogetherSettings(
+                                allowGuestsToControlPlayback = pb == "1",
+                                allowGuestsToAddTracks = tr != "0",
+                            )
+                        }
+                        params["cmd"]?.takeIf { it.isNotBlank() }?.let { parsedCommand = it }
+                        params["pl"]?.takeIf { it.isNotBlank() }?.let { parsedPayload = it }
+                        params["actId"]?.takeIf { it.isNotBlank() }?.let { parsedActionId = it }
+                        params["dur"]?.toLongOrNull()?.let { if (it > 0) parsedDuration = it }
+                    } else if (item.isNotBlank()) {
+                        cleanArtists.add(item)
+                    }
+                }
+            }
+
+            return ListenTogetherPlaybackState(
                 songId = json.optString("songId"),
                 title = json.optString("title"),
-                artists =
-                    json.optJSONArray("artists")?.let { array ->
-                        (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
-                    }.orEmpty(),
+                artists = cleanArtists,
                 thumbnailUrl = json.optString("thumbnailUrl").takeIf { it.isNotBlank() },
                 positionMs = json.optLong("positionMs"),
                 isPlaying = json.optBoolean("isPlaying"),
-                durationMs = json.optLong("durationMs", 0L),
+                durationMs = parsedDuration,
                 updatedAt = json.optLong("updatedAt"),
-                settings =
-                    json.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
-                        ?: ListenTogetherSettings(),
-                actionCommand = json.optString("actionCommand").takeIf { it.isNotBlank() },
-                actionPayload = json.optString("actionPayload").takeIf { it.isNotBlank() },
-                actionId = json.optString("actionId").takeIf { it.isNotBlank() },
+                settings = parsedSettings ?: ListenTogetherSettings(),
+                actionCommand = parsedCommand,
+                actionPayload = parsedPayload,
+                actionId = parsedActionId,
             )
+        }
     }
 }
 

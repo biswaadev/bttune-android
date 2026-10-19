@@ -22,14 +22,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
@@ -129,6 +132,7 @@ private fun isTechnicalNoise(msg: String?): Boolean {
     val lower = msg.lowercase()
     return lower.contains("cancelled") ||
            lower.contains("timeout") ||
+           lower.contains("timed out") ||
            lower.contains("left session") ||
            lower.contains("socket") ||
            lower.contains("broken pipe") ||
@@ -136,7 +140,11 @@ private fun isTechnicalNoise(msg: String?): Boolean {
            lower.contains("eofexception") ||
            lower.contains("standalonecoroutine") ||
            lower.contains("jobcancellationexception") ||
-           lower.contains("b2 was")
+           lower.contains("b2 was") ||
+           lower.contains("connection refused") ||
+           lower.contains("failed to connect") ||
+           lower.contains("unable to resolve host") ||
+           lower.contains("end of input")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -164,9 +172,12 @@ fun ListenTogetherScreen(
         ?: remember { mutableStateOf(emptyList()) }
     val scope = rememberCoroutineScope()
 
+    val nameManager = remember { com.darkxvenom.airbeats.ui.component.NamePreferenceManager(context) }
+    val accountUserName by nameManager.userName.collectAsState(initial = "")
+
     var hostModeOnline by remember { mutableStateOf(true) }
     var joinModeOnline by remember { mutableStateOf(true) }
-    var displayName by remember { mutableStateOf(ListenTogetherStore.defaultName()) }
+    var displayName by remember { mutableStateOf(ListenTogetherStore.defaultName(context)) }
     var joinCode by remember { mutableStateOf("") }
     var lanHostInput by remember { mutableStateOf("") }
     var lanPortInput by remember { mutableStateOf("8765") }
@@ -197,19 +208,37 @@ fun ListenTogetherScreen(
     val joinedSessionMessage = stringResource(R.string.joined_session)
     val leftSessionMessage = stringResource(R.string.left_session)
 
+    LaunchedEffect(accountUserName) {
+        if (accountUserName.isNotBlank()) {
+            val isCurrentGeneric = displayName.isBlank() ||
+                displayName.startsWith("AirBeats on") ||
+                displayName == "AirBeats listener"
+            if (isCurrentGeneric) {
+                displayName = accountUserName
+                ListenTogetherSync.setDisplayName(accountUserName)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         localIp = LanTogetherServer.getLocalIpAddress(context)
-        val savedSession = ListenTogetherStore.load(context) ?: return@LaunchedEffect
-        displayName = savedSession.displayName
-        isHost = savedSession.isHost
-        if (savedSession.isLan) {
-            hostModeOnline = false
-            joinModeOnline = false
-            lanHostInput = savedSession.hostAddress ?: savedSession.code
+        val defaultName = ListenTogetherStore.defaultName(context)
+        val savedSession = ListenTogetherStore.load(context)
+        if (savedSession != null) {
+            displayName = savedSession.displayName.ifBlank { defaultName }
+            isHost = savedSession.isHost
+            if (savedSession.isLan) {
+                hostModeOnline = false
+                joinModeOnline = false
+                lanHostInput = savedSession.hostAddress ?: savedSession.code
+            } else {
+                hostModeOnline = true
+                joinModeOnline = true
+                joinCode = savedSession.code
+            }
         } else {
-            hostModeOnline = true
-            joinModeOnline = true
-            joinCode = savedSession.code
+            displayName = defaultName
+            ListenTogetherSync.setDisplayName(defaultName)
         }
     }
 
@@ -329,8 +358,20 @@ fun ListenTogetherScreen(
             artworkUrl = mediaMetadata?.thumbnailUrl ?: session?.state?.thumbnailUrl
         )
 
+        val scrollState = rememberScrollState()
+
+        LaunchedEffect(expandedSection) {
+            if (expandedSection == "join") {
+                delay(200)
+                scrollState.animateScrollTo(scrollState.maxValue)
+            }
+        }
+
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = Color.Transparent,
             topBar = {
                 SettingsTopAppBar(
@@ -346,11 +387,11 @@ fun ListenTogetherScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
                     .windowInsetsPadding(
-                        LocalPlayerAwareWindowInsets.current.only(
+                        LocalPlayerAwareWindowInsets.current.union(WindowInsets.ime).only(
                             WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
                         )
                     )
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(horizontal = MusicTogetherSpacing.sm, vertical = MusicTogetherSpacing.xs)
             ) {
                 val activeSession = syncedSession ?: session
@@ -479,6 +520,7 @@ fun ListenTogetherScreen(
                                                 thumbnailUrl = metadata.thumbnailUrl,
                                                 positionMs = currentPosition,
                                                 isPlaying = isPlaying,
+                                                durationMs = playerConnection?.player?.duration?.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
                                                 settings = com.darkxvenom.airbeats.utils.ListenTogetherSettings(
                                                     allowGuestsToControlPlayback = hostAllowGuestsToControlPlayback,
                                                     allowGuestsToAddTracks = hostAllowGuestsToAddTracks,
@@ -640,7 +682,7 @@ fun ListenTogetherScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(140.dp))
             }
         }
     }

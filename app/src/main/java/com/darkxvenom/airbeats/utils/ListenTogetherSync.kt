@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.UUID
 import kotlin.math.abs
@@ -62,13 +63,19 @@ object ListenTogetherSync {
         val lower = msg.lowercase()
         val isTechnicalNoise = lower.contains("cancelled") ||
                 lower.contains("timeout") ||
+                lower.contains("timed out") ||
                 lower.contains("left session") ||
                 lower.contains("socket") ||
                 lower.contains("broken pipe") ||
                 lower.contains("reset by peer") ||
                 lower.contains("eofexception") ||
                 lower.contains("standalonecoroutine") ||
-                lower.contains("jobcancellationexception")
+                lower.contains("jobcancellationexception") ||
+                lower.contains("b2 was") ||
+                lower.contains("failed to connect") ||
+                lower.contains("connection refused") ||
+                lower.contains("unable to resolve host") ||
+                lower.contains("end of input")
         if (!isTechnicalNoise) {
             _message.value = msg
         }
@@ -88,9 +95,11 @@ object ListenTogetherSync {
     ) {
         appContext = context.applicationContext
         playerConnection = connection
+        val defName = ListenTogetherStore.defaultName(context.applicationContext)
+        _displayName.value = defName
         val saved = ListenTogetherStore.load(context.applicationContext)
         if (saved != null && _session.value == null) {
-            _displayName.value = saved.displayName
+            _displayName.value = saved.displayName.ifBlank { defName }
             _isHost.value = saved.isHost
             _connectionMode.value = if (saved.isLan) ListenTogetherConnectionMode.LAN else ListenTogetherConnectionMode.ONLINE
             lanHostAddress = saved.hostAddress
@@ -115,7 +124,7 @@ object ListenTogetherSync {
                     restartSync()
                 }.onFailure {
                     ListenTogetherStore.clear(context.applicationContext)
-                    _message.value = it.message
+                    setDisplayMessage(it.message)
                 }
             }
         } else if (_session.value != null) {
@@ -124,7 +133,7 @@ object ListenTogetherSync {
     }
 
     fun setDisplayName(name: String) {
-        _displayName.value = name.ifBlank { ListenTogetherStore.defaultName() }
+        _displayName.value = name.ifBlank { ListenTogetherStore.defaultName(appContext) }
     }
 
     fun setConnectionMode(mode: ListenTogetherConnectionMode) {
@@ -139,7 +148,7 @@ object ListenTogetherSync {
         isLan: Boolean = false,
         hostAddress: String? = null,
     ) {
-        _displayName.value = displayName.ifBlank { ListenTogetherStore.defaultName() }
+        _displayName.value = displayName.ifBlank { ListenTogetherStore.defaultName(context) }
         _session.value = session
         _isHost.value = isHost
         _connectionMode.value = if (isLan) ListenTogetherConnectionMode.LAN else ListenTogetherConnectionMode.ONLINE
@@ -516,7 +525,7 @@ object ListenTogetherSync {
                     softCorrectPosition(connection, remoteSession)
                 }
             }.onFailure {
-                _message.value = it.message
+                setDisplayMessage(it.message)
             }
         }
     }
@@ -532,13 +541,7 @@ object ListenTogetherSync {
             val resolvedSettings = if (_isHost.value) {
                 preservedSettings
             } else {
-                if (remoteSession.settings != ListenTogetherSettings()) {
-                    remoteSession.settings
-                } else if (remoteSession.state?.settings != null && remoteSession.state.settings != ListenTogetherSettings()) {
-                    remoteSession.state.settings
-                } else {
-                    remoteSession.settings
-                }
+                remoteSession.settings
             }
             val keptSession = remoteSession.copy(
                 participantId = session.participantId,
@@ -555,38 +558,42 @@ object ListenTogetherSync {
                 if (!cmd.isNullOrBlank() && actionId != null && actionId != lastHandledActionId) {
                     lastHandledActionId = actionId
                     val allowed = if (cmd in listOf("play", "pause", "toggle_play_pause", "seek", "next", "skip_next", "previous", "skip_previous")) {
-                        remoteSession.settings.allowGuestsToControlPlayback
+                        keptSession.settings.allowGuestsToControlPlayback
                     } else if (cmd in listOf("add_track", "play_next")) {
-                        remoteSession.settings.allowGuestsToAddTracks
+                        keptSession.settings.allowGuestsToAddTracks
                     } else false
 
                     if (allowed) {
-                        when (cmd) {
-                            "play" -> connection.player.play()
-                            "pause" -> connection.player.pause()
-                            "toggle_play_pause" -> connection.togglePlayPause()
-                            "seek" -> if (remoteState.positionMs >= 0) connection.player.seekTo(remoteState.positionMs)
-                            "next", "skip_next" -> connection.seekToNext()
-                            "previous", "skip_previous" -> connection.seekToPrevious()
-                            "add_track" -> {
-                                remoteState.actionPayload?.let { payload ->
-                                    runCatching {
-                                        val json = JSONObject(payload)
-                                        val track = ListenTogetherPlaybackState.fromJson(json)
-                                        connection.addToQueue(track.toMediaMetadata().toMediaItem())
+                        withContext(Dispatchers.Main) {
+                            when (cmd) {
+                                "play" -> connection.player.play()
+                                "pause" -> connection.player.pause()
+                                "toggle_play_pause" -> connection.togglePlayPause()
+                                "seek" -> if (remoteState.positionMs >= 0) connection.player.seekTo(remoteState.positionMs)
+                                "next", "skip_next" -> connection.seekToNext()
+                                "previous", "skip_previous" -> connection.seekToPrevious()
+                                "add_track" -> {
+                                    remoteState.actionPayload?.let { payload ->
+                                        runCatching {
+                                            val json = JSONObject(payload)
+                                            val track = ListenTogetherPlaybackState.fromJson(json)
+                                            connection.addToQueue(track.toMediaMetadata().toMediaItem())
+                                        }
                                     }
                                 }
-                            }
-                            "play_next" -> {
-                                remoteState.actionPayload?.let { payload ->
-                                    runCatching {
-                                        val json = JSONObject(payload)
-                                        val track = ListenTogetherPlaybackState.fromJson(json)
-                                        connection.playNext(track.toMediaMetadata().toMediaItem())
+                                "play_next" -> {
+                                    remoteState.actionPayload?.let { payload ->
+                                        runCatching {
+                                            val json = JSONObject(payload)
+                                            val track = ListenTogetherPlaybackState.fromJson(json)
+                                            connection.playNext(track.toMediaMetadata().toMediaItem())
+                                        }
                                     }
                                 }
                             }
                         }
+                        publishLocalStateOnline(connection, keptSession)
+                        return@onSuccess
                     }
                 }
 
@@ -630,6 +637,9 @@ object ListenTogetherSync {
                         isPlaying = connection.player.playWhenReady,
                         durationMs = connection.player.duration.takeIf { it > 0 } ?: (metadata.duration.toLong() * 1000L).coerceAtLeast(0L),
                         settings = session.settings,
+                        actionCommand = null,
+                        actionPayload = null,
+                        actionId = null,
                     )
             )
         }.onSuccess { updatedSession ->
@@ -868,7 +878,7 @@ object ListenTogetherSync {
                         extraData = extraData,
                     )
                 } else {
-                    val currentState = activeSession.state ?: return@launch
+                    val currentState = activeSession.state ?: ListenTogetherPlaybackState(settings = activeSession.settings)
                     val targetPlaying = when (action) {
                         "play" -> true
                         "pause" -> false
@@ -880,6 +890,7 @@ object ListenTogetherSync {
                         isPlaying = targetPlaying,
                         positionMs = targetPosition,
                         updatedAt = System.currentTimeMillis(),
+                        settings = activeSession.settings,
                         actionCommand = action,
                         actionPayload = extraData?.toString(),
                         actionId = UUID.randomUUID().toString().take(8),
@@ -891,7 +902,12 @@ object ListenTogetherSync {
                     )
                 }
             }.onSuccess { updatedSession ->
-                _session.value = updatedSession.copy(participantId = activeSession.participantId)
+                val preservedSettings = activeSession.settings
+                _session.value = updatedSession.copy(
+                    participantId = activeSession.participantId,
+                    settings = preservedSettings,
+                    state = updatedSession.state?.copy(settings = preservedSettings) ?: updatedSession.state
+                )
                 lastAppliedVersion = updatedSession.stateVersion
                 suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
             }.onFailure { e ->
