@@ -632,13 +632,14 @@ object ListenTogetherSync {
                         settings = session.settings,
                     )
             )
+        }.onSuccess { updatedSession ->
             val preservedSettings = _session.value?.settings ?: session.settings
-            _session.value = it.copy(
+            _session.value = updatedSession.copy(
                 participantId = session.participantId,
                 settings = preservedSettings,
-                state = it.state?.copy(settings = preservedSettings) ?: it.state
+                state = updatedSession.state?.copy(settings = preservedSettings) ?: updatedSession.state
             )
-            lastAppliedVersion = it.stateVersion
+            lastAppliedVersion = updatedSession.stateVersion
             lastControllerPublishAt = System.currentTimeMillis()
         }.onFailure {
             Log.w(TAG, "publishLocalStateOnline failed: ${it.message}")

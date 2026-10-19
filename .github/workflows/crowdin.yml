@@ -6,12 +6,12 @@ on:
 jobs:
   crowdin:
     runs-on: ubuntu-latest
-    if: ${{ secrets.CROWDIN_PROJECT_ID != '' && secrets.CROWDIN_PERSONAL_TOKEN != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
       - name: crowdin action
+        if: ${{ env.CROWDIN_PROJECT_ID != '' && env.CROWDIN_PERSONAL_TOKEN != '' }}
         uses: crowdin/github-action@v2
         with:
           upload_sources: true
