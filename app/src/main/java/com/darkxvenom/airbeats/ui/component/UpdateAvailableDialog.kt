@@ -65,6 +65,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.darkxvenom.airbeats.R
 import com.darkxvenom.airbeats.utils.AppUpdateService
 import com.darkxvenom.airbeats.utils.UpdateDownloadState
@@ -79,6 +83,27 @@ fun UpdateAvailableDialog(
     val context = LocalContext.current
     var isWhatIsNewExpanded by remember { mutableStateOf(false) }
     val downloadState by AppUpdateService.downloadState.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var waitingForInstallPermission by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner, downloadState) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (waitingForInstallPermission && downloadState is UpdateDownloadState.Completed) {
+                    val canInstall = AppUpdateService.canRequestPackageInstalls(context)
+                    if (canInstall) {
+                        waitingForInstallPermission = false
+                        val apkFile = (downloadState as UpdateDownloadState.Completed).apkFile
+                        AppUpdateService.openInstaller(context, apkFile)
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val arrowRotation by animateFloatAsState(
         targetValue = if (isWhatIsNewExpanded) 180f else 0f,
@@ -546,6 +571,9 @@ fun UpdateAvailableDialog(
                         onClick = {
                             when (val state = downloadState) {
                                 is UpdateDownloadState.Completed -> {
+                                    if (!AppUpdateService.canRequestPackageInstalls(context)) {
+                                        waitingForInstallPermission = true
+                                    }
                                     AppUpdateService.openInstaller(context, state.apkFile)
                                 }
                                 else -> {

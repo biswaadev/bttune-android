@@ -172,9 +172,12 @@ fun ListenTogetherScreen(
         ?: remember { mutableStateOf(emptyList()) }
     val scope = rememberCoroutineScope()
 
+    val nameManager = remember { com.darkxvenom.airbeats.ui.component.NamePreferenceManager(context) }
+    val accountUserName by nameManager.userName.collectAsState(initial = "")
+
     var hostModeOnline by remember { mutableStateOf(true) }
     var joinModeOnline by remember { mutableStateOf(true) }
-    var displayName by remember { mutableStateOf(ListenTogetherStore.defaultName()) }
+    var displayName by remember { mutableStateOf(ListenTogetherStore.defaultName(context)) }
     var joinCode by remember { mutableStateOf("") }
     var lanHostInput by remember { mutableStateOf("") }
     var lanPortInput by remember { mutableStateOf("8765") }
@@ -205,19 +208,37 @@ fun ListenTogetherScreen(
     val joinedSessionMessage = stringResource(R.string.joined_session)
     val leftSessionMessage = stringResource(R.string.left_session)
 
+    LaunchedEffect(accountUserName) {
+        if (accountUserName.isNotBlank()) {
+            val isCurrentGeneric = displayName.isBlank() ||
+                displayName.startsWith("AirBeats on") ||
+                displayName == "AirBeats listener"
+            if (isCurrentGeneric) {
+                displayName = accountUserName
+                ListenTogetherSync.setDisplayName(accountUserName)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         localIp = LanTogetherServer.getLocalIpAddress(context)
-        val savedSession = ListenTogetherStore.load(context) ?: return@LaunchedEffect
-        displayName = savedSession.displayName
-        isHost = savedSession.isHost
-        if (savedSession.isLan) {
-            hostModeOnline = false
-            joinModeOnline = false
-            lanHostInput = savedSession.hostAddress ?: savedSession.code
+        val defaultName = ListenTogetherStore.defaultName(context)
+        val savedSession = ListenTogetherStore.load(context)
+        if (savedSession != null) {
+            displayName = savedSession.displayName.ifBlank { defaultName }
+            isHost = savedSession.isHost
+            if (savedSession.isLan) {
+                hostModeOnline = false
+                joinModeOnline = false
+                lanHostInput = savedSession.hostAddress ?: savedSession.code
+            } else {
+                hostModeOnline = true
+                joinModeOnline = true
+                joinCode = savedSession.code
+            }
         } else {
-            hostModeOnline = true
-            joinModeOnline = true
-            joinCode = savedSession.code
+            displayName = defaultName
+            ListenTogetherSync.setDisplayName(defaultName)
         }
     }
 

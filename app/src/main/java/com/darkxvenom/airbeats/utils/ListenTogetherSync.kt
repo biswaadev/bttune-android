@@ -94,9 +94,11 @@ object ListenTogetherSync {
     ) {
         appContext = context.applicationContext
         playerConnection = connection
+        val defName = ListenTogetherStore.defaultName(context.applicationContext)
+        _displayName.value = defName
         val saved = ListenTogetherStore.load(context.applicationContext)
         if (saved != null && _session.value == null) {
-            _displayName.value = saved.displayName
+            _displayName.value = saved.displayName.ifBlank { defName }
             _isHost.value = saved.isHost
             _connectionMode.value = if (saved.isLan) ListenTogetherConnectionMode.LAN else ListenTogetherConnectionMode.ONLINE
             lanHostAddress = saved.hostAddress
@@ -130,7 +132,7 @@ object ListenTogetherSync {
     }
 
     fun setDisplayName(name: String) {
-        _displayName.value = name.ifBlank { ListenTogetherStore.defaultName() }
+        _displayName.value = name.ifBlank { ListenTogetherStore.defaultName(appContext) }
     }
 
     fun setConnectionMode(mode: ListenTogetherConnectionMode) {
@@ -145,7 +147,7 @@ object ListenTogetherSync {
         isLan: Boolean = false,
         hostAddress: String? = null,
     ) {
-        _displayName.value = displayName.ifBlank { ListenTogetherStore.defaultName() }
+        _displayName.value = displayName.ifBlank { ListenTogetherStore.defaultName(context) }
         _session.value = session
         _isHost.value = isHost
         _connectionMode.value = if (isLan) ListenTogetherConnectionMode.LAN else ListenTogetherConnectionMode.ONLINE
