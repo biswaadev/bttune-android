@@ -116,6 +116,26 @@ object ListenTogetherClient {
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: "Listen Together request failed ($code)"
 }
 
+data class ListenTogetherSettings(
+    val allowGuestsToControlPlayback: Boolean = false,
+    val allowGuestsToAddTracks: Boolean = true,
+) {
+    fun toJson(): JSONObject =
+        JSONObject()
+            .put("allowGuestsToControlPlayback", allowGuestsToControlPlayback)
+            .put("allowGuestsToAddTracks", allowGuestsToAddTracks)
+
+    companion object {
+        fun fromJson(json: JSONObject?): ListenTogetherSettings {
+            if (json == null) return ListenTogetherSettings()
+            return ListenTogetherSettings(
+                allowGuestsToControlPlayback = json.optBoolean("allowGuestsToControlPlayback", false),
+                allowGuestsToAddTracks = json.optBoolean("allowGuestsToAddTracks", true),
+            )
+        }
+    }
+}
+
 data class ListenTogetherSession(
     val code: String,
     val participantId: String,
@@ -128,6 +148,7 @@ data class ListenTogetherSession(
     val stateVersion: Long,
     val serverNow: Long,
     val state: ListenTogetherPlaybackState?,
+    val settings: ListenTogetherSettings = ListenTogetherSettings(),
 ) {
     fun toJson(): JSONObject =
         JSONObject()
@@ -142,6 +163,7 @@ data class ListenTogetherSession(
             .put("stateVersion", stateVersion)
             .put("serverNow", serverNow)
             .put("state", state?.toJson())
+            .put("settings", settings.toJson())
 
     companion object {
         fun fromJson(json: JSONObject): ListenTogetherSession =
@@ -162,6 +184,10 @@ data class ListenTogetherSession(
                 stateVersion = json.optLong("stateVersion", 0L),
                 serverNow = json.optLong("serverNow", System.currentTimeMillis()),
                 state = json.optJSONObject("state")?.let(ListenTogetherPlaybackState::fromJson),
+                settings =
+                    json.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
+                        ?: json.optJSONObject("state")?.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
+                        ?: ListenTogetherSettings(),
             )
     }
 }
@@ -196,6 +222,10 @@ data class ListenTogetherPlaybackState(
     val isPlaying: Boolean,
     val durationMs: Long = 0L,
     val updatedAt: Long = System.currentTimeMillis(),
+    val settings: ListenTogetherSettings = ListenTogetherSettings(),
+    val actionCommand: String? = null,
+    val actionPayload: String? = null,
+    val actionId: String? = null,
 ) {
     fun toMediaMetadata() =
         MediaMetadata(
@@ -216,6 +246,10 @@ data class ListenTogetherPlaybackState(
             .put("isPlaying", isPlaying)
             .put("durationMs", durationMs)
             .put("updatedAt", updatedAt)
+            .put("settings", settings.toJson())
+            .put("actionCommand", actionCommand)
+            .put("actionPayload", actionPayload)
+            .put("actionId", actionId)
 
     companion object {
         fun fromJson(json: JSONObject): ListenTogetherPlaybackState =
@@ -231,6 +265,13 @@ data class ListenTogetherPlaybackState(
                 isPlaying = json.optBoolean("isPlaying"),
                 durationMs = json.optLong("durationMs", 0L),
                 updatedAt = json.optLong("updatedAt"),
+                settings =
+                    json.optJSONObject("settings")?.let(ListenTogetherSettings::fromJson)
+                        ?: ListenTogetherSettings(),
+                actionCommand = json.optString("actionCommand").takeIf { it.isNotBlank() },
+                actionPayload = json.optString("actionPayload").takeIf { it.isNotBlank() },
+                actionId = json.optString("actionId").takeIf { it.isNotBlank() },
             )
     }
 }
+

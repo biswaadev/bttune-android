@@ -11,6 +11,11 @@ import com.darkxvenom.airbeats.models.MediaMetadata
 import java.util.ArrayDeque
 
 fun Player.togglePlayPause() {
+    val connection = com.darkxvenom.airbeats.playback.PlayerConnection.instance
+    if (connection != null && com.darkxvenom.airbeats.utils.ListenTogetherSync.session.value != null && !com.darkxvenom.airbeats.utils.ListenTogetherSync.isHost.value) {
+        connection.togglePlayPause()
+        return
+    }
     if (!playWhenReady && playbackState == Player.STATE_IDLE) {
         prepare()
     }
