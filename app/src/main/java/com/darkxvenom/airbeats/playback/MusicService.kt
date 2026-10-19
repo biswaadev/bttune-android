@@ -347,6 +347,12 @@ class MusicService :
     val isNetworkConnected = MutableStateFlow(false)
 
     fun isNetworkAvailable(): Boolean {
+        val isLanGuest = !com.darkxvenom.airbeats.utils.ListenTogetherSync.isHost.value &&
+            com.darkxvenom.airbeats.utils.ListenTogetherSync.connectionMode.value == com.darkxvenom.airbeats.utils.ListenTogetherConnectionMode.LAN &&
+            !com.darkxvenom.airbeats.utils.ListenTogetherSync.lanHost.isNullOrBlank()
+        if (isLanGuest) {
+            return true
+        }
         return try {
             val cm = if (::connectivityManager.isInitialized) connectivityManager else getSystemService() as? ConnectivityManager
                 ?: return isNetworkConnected.value
@@ -3536,6 +3542,17 @@ class MusicService :
                 android.net.Uri.fromFile(offlineFile).toString(),
                 offlineFile.length()
             )
+        }
+
+        // If connected to a LAN Listen Together session as a guest, stream directly from the host over LAN
+        val lanHost = com.darkxvenom.airbeats.utils.ListenTogetherSync.lanHost
+        if (!com.darkxvenom.airbeats.utils.ListenTogetherSync.isHost.value &&
+            com.darkxvenom.airbeats.utils.ListenTogetherSync.connectionMode.value == com.darkxvenom.airbeats.utils.ListenTogetherConnectionMode.LAN &&
+            !lanHost.isNullOrBlank()) {
+            val normalizedHost = lanHost.removePrefix("http://").removePrefix("https://").trimEnd('/')
+            val lanStreamUrl = "http://$normalizedHost/stream?id=$mediaId"
+            Timber.tag("MusicService").d("Streaming song $mediaId from LAN host at $lanStreamUrl")
+            return dataSpec.withStreamUrl(lanStreamUrl, null)
         }
 
         // If offline and not in any cache, fail gracefully without attempting network

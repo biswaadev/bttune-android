@@ -37,6 +37,7 @@ object ListenTogetherSync {
     private var lastControllerPublishAt = 0L
     private var suppressLocalSyncUntil = 0L
     private var lastHandledActionId: String? = null
+    private var loadingSongId: String? = null
 
     private val _session = MutableStateFlow<ListenTogetherSession?>(null)
     val session = _session.asStateFlow()
@@ -54,7 +55,9 @@ object ListenTogetherSync {
     val displayName = _displayName.asStateFlow()
 
     private var lanServer: LanTogetherServer? = null
-    private var lanHostAddress: String? = null
+    var lanHostAddress: String? = null
+        private set
+    val lanHost: String? get() = lanHostAddress
 
     fun start(
         context: Context,
@@ -120,6 +123,7 @@ object ListenTogetherSync {
         lanHostAddress = hostAddress
         appContext = context.applicationContext
         lastAppliedVersion = session.stateVersion
+        loadingSongId = null
         ListenTogetherStore.save(
             context = context.applicationContext,
             session = session,
@@ -343,6 +347,12 @@ object ListenTogetherSync {
             lanServer?.stop()
             lanServer = null
             lanHostAddress = null
+            loadingSongId = null
+            playerConnection?.player?.let { player ->
+                if (player.playbackParameters.speed != 1.0f) {
+                    player.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
+                }
+            }
             if (context != null) ListenTogetherStore.clear(context)
             _session.value = null
             _isHost.value = false
@@ -389,10 +399,17 @@ object ListenTogetherSync {
                 val timeSinceAction = System.currentTimeMillis() - server.lastActionTime
                 val isActionPending = timeSinceAction < 2000L && current?.isPlaying != isPlaying
 
-                val needsUpdate = !isActionPending && (current == null ||
-                    current.songId != metadata.id ||
-                    current.isPlaying != isPlaying ||
-                    abs(pos - current.positionMs) > 1000L)
+                val isTrackChange = current == null || current.songId != metadata.id
+                val isPlayStateChange = current != null && current.isPlaying != isPlaying
+                val expectedPos = if (current != null && current.isPlaying) {
+                    current.positionMs + (System.currentTimeMillis() - current.updatedAt)
+                } else {
+                    current?.positionMs ?: 0L
+                }
+                val isHardSeek = current != null && kotlin.math.abs(pos - expectedPos) > 3000L
+
+                val needsUpdate = !isActionPending && (isTrackChange || isPlayStateChange || isHardSeek ||
+                    kotlin.math.abs(pos - (current?.positionMs ?: 0L)) > 1000L)
 
                 if (needsUpdate) {
                     server.playbackState = ListenTogetherPlaybackState(
@@ -406,7 +423,9 @@ object ListenTogetherSync {
                         updatedAt = System.currentTimeMillis(),
                         settings = server.settings,
                     )
-                    server.stateVersion++
+                    if (isTrackChange || isPlayStateChange || isHardSeek) {
+                        server.stateVersion++
+                    }
                 }
             }
             _session.value = server.buildSessionSnapshot("host")
@@ -550,17 +569,40 @@ object ListenTogetherSync {
         suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
 
         val currentSongId = connection.player.currentMediaItem?.mediaId
-        if (currentSongId != remoteState.songId && remoteState.songId.isNotBlank()) {
-            val metadata = remoteState.toMediaMetadata()
-            connection.playQueue(YouTubeQueue(WatchEndpoint(videoId = remoteState.songId), metadata))
-            delay(400)
+        if (remoteState.songId.isNotBlank()) {
+            if (currentSongId != remoteState.songId) {
+                if (loadingSongId != remoteState.songId) {
+                    loadingSongId = remoteState.songId
+                    val metadata = remoteState.toMediaMetadata()
+                    connection.playQueue(YouTubeQueue(WatchEndpoint(videoId = remoteState.songId), metadata))
+                }
+                return
+            } else {
+                loadingSongId = null
+            }
         }
 
-        if (connection.player.playbackState != androidx.media3.common.Player.STATE_BUFFERING) {
+        if (connection.player.playbackState == androidx.media3.common.Player.STATE_READY) {
             val target = expectedPosition(remoteSession)
-            val threshold = if (_connectionMode.value == ListenTogetherConnectionMode.LAN) SEEK_TOLERANCE_MS else ONLINE_SEEK_TOLERANCE_MS
-            if (abs(connection.player.currentPosition - target) > threshold) {
+            val isLan = _connectionMode.value == ListenTogetherConnectionMode.LAN
+            val hardSeekThreshold = if (isLan) 3500L else 5000L
+            val diff = connection.player.currentPosition - target
+            val absDiff = kotlin.math.abs(diff)
+
+            if (absDiff > hardSeekThreshold) {
                 connection.player.seekTo(target)
+                if (connection.player.playbackParameters.speed != 1.0f) {
+                    connection.player.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
+                }
+            } else if (absDiff > (if (isLan) 800L else 1200L)) {
+                val speed = if (diff < 0) 1.04f else 0.96f
+                if (connection.player.playbackParameters.speed != speed) {
+                    connection.player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
+                }
+            } else {
+                if (connection.player.playbackParameters.speed != 1.0f) {
+                    connection.player.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
+                }
             }
         }
 
@@ -575,15 +617,36 @@ object ListenTogetherSync {
         connection: PlayerConnection,
         remoteSession: ListenTogetherSession,
     ) {
-        if (connection.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING ||
-            connection.player.playbackState == androidx.media3.common.Player.STATE_IDLE) {
+        if (connection.player.playbackState != androidx.media3.common.Player.STATE_READY) {
             return
         }
+        val remoteState = remoteSession.state ?: return
+        val currentSongId = connection.player.currentMediaItem?.mediaId
+        if (currentSongId != remoteState.songId) {
+            return
+        }
+
         val target = expectedPosition(remoteSession)
-        val threshold = if (_connectionMode.value == ListenTogetherConnectionMode.LAN) SEEK_TOLERANCE_MS * 2 else ONLINE_SEEK_TOLERANCE_MS * 2
-        if (abs(connection.player.currentPosition - target) > threshold) {
+        val isLan = _connectionMode.value == ListenTogetherConnectionMode.LAN
+        val hardSeekThreshold = if (isLan) 3500L else 5000L
+        val diff = connection.player.currentPosition - target
+        val absDiff = kotlin.math.abs(diff)
+
+        if (absDiff > hardSeekThreshold) {
             suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
             connection.player.seekTo(target)
+            if (connection.player.playbackParameters.speed != 1.0f) {
+                connection.player.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
+            }
+        } else if (absDiff > (if (isLan) 800L else 1200L)) {
+            val speed = if (diff < 0) 1.04f else 0.96f
+            if (connection.player.playbackParameters.speed != speed) {
+                connection.player.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
+            }
+        } else {
+            if (connection.player.playbackParameters.speed != 1.0f) {
+                connection.player.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
+            }
         }
     }
 

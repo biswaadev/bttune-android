@@ -337,6 +337,54 @@ class LanTogetherServer(
             httpFactory.setDefaultRequestProperties(source.requestHeaders)
         }
 
+        if (source.url.startsWith("file://") || source.url.startsWith("/")) {
+            val filePath = if (source.url.startsWith("file://")) {
+                android.net.Uri.parse(source.url).path
+            } else {
+                source.url
+            }
+            val localFile = if (filePath != null) java.io.File(filePath) else null
+            if (localFile != null && localFile.exists() && localFile.isFile) {
+                val total = localFile.length()
+                val mimeType = resolveMimeType(source)
+                if (total <= 0L) {
+                    return cors(newFixedLengthResponse(Response.Status.OK, mimeType, ""))
+                }
+                val range = session.headers["range"]
+                val match = range?.let { Regex("bytes=(\\d*)-(\\d*)").matchEntire(it) }
+                var start = 0L
+                var end = total - 1L
+
+                if (range != null) {
+                    if (match == null) return rangeError(total)
+                    val first = match.groupValues[1]
+                    val last = match.groupValues[2]
+                    if (first.isEmpty()) {
+                        val suffix = last.toLongOrNull()?.takeIf { it > 0 } ?: return rangeError(total)
+                        start = (total - suffix).coerceAtLeast(0)
+                    } else {
+                        start = first.toLongOrNull() ?: return rangeError(total)
+                        if (last.isNotEmpty()) end = minOf(last.toLongOrNull() ?: return rangeError(total), end)
+                    }
+                    if (start >= total || end < start) return rangeError(total)
+                }
+
+                val length = end - start + 1L
+                val fis = java.io.FileInputStream(localFile)
+                if (start > 0) {
+                    fis.skip(start)
+                }
+
+                val status = if (range == null) Response.Status.OK else Response.Status.PARTIAL_CONTENT
+                val response = newFixedLengthResponse(status, mimeType, fis, length)
+                response.addHeader("Accept-Ranges", "bytes")
+                if (range != null) {
+                    response.addHeader("Content-Range", "bytes $start-$end/$total")
+                }
+                return cors(response)
+            }
+        }
+
         val factory: androidx.media3.datasource.DataSource.Factory = if (targetContext != null) {
             DefaultDataSource.Factory(targetContext, httpFactory)
         } else {
@@ -1364,6 +1412,42 @@ class LanTogetherServer(
     var lastServerState = null;
     var isSeeking = false;
     var clientPid = 'web_' + Math.random().toString(36).substring(2, 8);
+    var serverClockOffset = 0;
+    var lastSeekTime = 0;
+    var playPromise = null;
+
+    function safePlay() {
+      if (!audio || playPromise) return;
+      playPromise = audio.play();
+      if (playPromise && playPromise.then) {
+        playPromise.then(function() {
+          playPromise = null;
+          updatePlayPauseUi();
+        }).catch(function(e) {
+          playPromise = null;
+          updatePlayPauseUi();
+        });
+      } else {
+        playPromise = null;
+        updatePlayPauseUi();
+      }
+    }
+
+    function safePause() {
+      if (!audio) return;
+      if (playPromise && playPromise.then) {
+        playPromise.then(function() {
+          playPromise = null;
+          if (!audio.paused) audio.pause();
+          updatePlayPauseUi();
+        }).catch(function() {
+          playPromise = null;
+        });
+      } else if (!audio.paused) {
+        audio.pause();
+        updatePlayPauseUi();
+      }
+    }
 
     function formatTime(sec) {
       if (!sec || isNaN(sec) || sec < 0) sec = 0;
@@ -1436,13 +1520,13 @@ class LanTogetherServer(
           isUserPaused = false;
           lastUserActionTime = Date.now();
           if (lastServerState) lastServerState.isPlaying = true;
-          audio.play().catch(function(e) { console.warn('Play error:', e); });
+          safePlay();
           sendPlaybackAction('play', Math.round((audio.currentTime || 0) * 1000));
         } else {
           isUserPaused = true;
           lastUserActionTime = Date.now();
           if (lastServerState) lastServerState.isPlaying = false;
-          audio.pause();
+          safePause();
           sendPlaybackAction('pause', Math.round((audio.currentTime || 0) * 1000));
         }
         updatePlayPauseUi();
@@ -1456,7 +1540,7 @@ class LanTogetherServer(
         loadAndPlaySong(lastServerState.songId, lastServerState);
       } else {
         audio.src = '/stream?t=' + Date.now();
-        audio.play().catch(function(e) { console.warn('Stream waiting...', e); });
+        safePlay();
       }
       updatePlayPauseUi();
     }
@@ -1467,9 +1551,10 @@ class LanTogetherServer(
       audio.src = streamUrl;
       audio.load();
 
+      var hostCurrentTime = Date.now() + serverClockOffset;
       var posMs = state.positionMs || 0;
       if (state.isPlaying && state.updatedAt) {
-        posMs += Math.max(0, Date.now() - state.updatedAt);
+        posMs += Math.max(0, hostCurrentTime - state.updatedAt);
       }
       var startSec = Math.max(0, posMs / 1000);
 
@@ -1485,7 +1570,7 @@ class LanTogetherServer(
 
       var shouldPlay = !isUserPaused && (state.isPlaying || (Date.now() - lastUserActionTime < 4000));
       if (shouldPlay) {
-        audio.play().catch(function(e) { console.warn('Audio play error:', e); });
+        safePlay();
       }
       updatePlayPauseUi();
     }
@@ -1646,6 +1731,9 @@ class LanTogetherServer(
       if (!data) return;
       var state = data.state;
       lastServerState = state;
+      if (data.serverNow) {
+        serverClockOffset = data.serverNow - Date.now();
+      }
 
       var count = data.participants || 1;
       var countEl = document.getElementById('participantCount');
@@ -1699,21 +1787,37 @@ class LanTogetherServer(
           }
         } else if (isAudioActivated && !isUserPaused) {
           var timeSinceUserAction = Date.now() - lastUserActionTime;
-          if (timeSinceUserAction > 4000) {
+          if (timeSinceUserAction > 4000 && !audio.seeking) {
             if (state.isPlaying && audio.paused) {
-              audio.play().catch(function(){});
+              safePlay();
             } else if (!state.isPlaying && !audio.paused) {
-              audio.pause();
+              safePause();
+              if (audio.playbackRate !== 1.0) audio.playbackRate = 1.0;
             }
           }
 
-          if (state.isPlaying && !isSeeking && timeSinceUserAction > 4000) {
-            var elapsedMs = Math.max(0, Date.now() - (state.updatedAt || Date.now()));
+          if (state.isPlaying && !isSeeking && !audio.seeking && timeSinceUserAction > 6000) {
+            var hostCurrentTime = Date.now() + serverClockOffset;
+            var elapsedMs = Math.max(0, hostCurrentTime - (state.updatedAt || hostCurrentTime));
             var expectedSec = ((state.positionMs || 0) + elapsedMs) / 1000;
-            if (audio.duration && expectedSec < audio.duration) {
-              var diff = Math.abs(audio.currentTime - expectedSec);
-              if (diff > 3.5) {
+            if (audio.duration && isFinite(audio.duration) && expectedSec < audio.duration) {
+              var diff = audio.currentTime - expectedSec;
+              var absDiff = Math.abs(diff);
+
+              if (absDiff > 12 && (Date.now() - lastSeekTime > 8000)) {
+                lastSeekTime = Date.now();
                 audio.currentTime = expectedSec;
+                if (audio.playbackRate !== 1.0) audio.playbackRate = 1.0;
+              } else if (absDiff > 1.5 && absDiff <= 12) {
+                if (diff < 0) {
+                  audio.playbackRate = 1.05;
+                } else {
+                  audio.playbackRate = 0.95;
+                }
+              } else {
+                if (audio.playbackRate !== 1.0) {
+                  audio.playbackRate = 1.0;
+                }
               }
             }
           }
