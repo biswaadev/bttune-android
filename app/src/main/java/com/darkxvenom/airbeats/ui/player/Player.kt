@@ -81,6 +81,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.IconButton
 import com.darkxvenom.airbeats.db.MusicDatabase
+import com.darkxvenom.airbeats.utils.ListenTogetherSync
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
@@ -392,6 +393,12 @@ fun BottomSheetPlayer(
     val canSkipPrevious by playerConnection.canSkipPrevious.collectAsState()
     val canSkipNext by playerConnection.canSkipNext.collectAsState()
     val playerVolume = playerConnection.service.playerVolume.collectAsState()
+
+    val togetherSession by ListenTogetherSync.session.collectAsState()
+    val isTogetherHost by ListenTogetherSync.isHost.collectAsState()
+    val canControlPlayback = remember(togetherSession, isTogetherHost) {
+        togetherSession == null || isTogetherHost || togetherSession?.settings?.allowGuestsToControlPlayback == true
+    }
 
     val queueWindows by playerConnection.queueWindows.collectAsState()
     val currentWindowIndex = playerConnection.player.currentMediaItemIndex
@@ -1581,12 +1588,13 @@ fun BottomSheetPlayer(
                     Slider(
                         value = (sliderPosition ?: position).toFloat(),
                         valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
+                        enabled = canControlPlayback,
                         onValueChange = {
                             sliderPosition = it.toLong()
                         },
                         onValueChangeFinished = {
                             sliderPosition?.let {
-                                playerConnection.player.seekTo(it)
+                                playerConnection.seekTo(it)
                                 position = it
                             }
                             sliderPosition = null
@@ -1604,12 +1612,13 @@ fun BottomSheetPlayer(
                     SquigglySlider(
                         value = (sliderPosition ?: position).toFloat(),
                         valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
+                        enabled = canControlPlayback,
                         onValueChange = {
                             sliderPosition = it.toLong()
                         },
                         onValueChangeFinished = {
                             sliderPosition?.let {
-                                playerConnection.player.seekTo(it)
+                                playerConnection.seekTo(it)
                                 position = it
                             }
                             sliderPosition = null
@@ -1632,12 +1641,13 @@ fun BottomSheetPlayer(
                     Slider(
                         value = (sliderPosition ?: position).toFloat(),
                         valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
+                        enabled = canControlPlayback,
                         onValueChange = {
                             sliderPosition = it.toLong()
                         },
                         onValueChangeFinished = {
                             sliderPosition?.let {
-                                playerConnection.player.seekTo(it)
+                                playerConnection.seekTo(it)
                                 position = it
                             }
                             sliderPosition = null
@@ -1731,7 +1741,7 @@ fun BottomSheetPlayer(
                                     playerConnection.player.seekTo(0, 0)
                                     playerConnection.player.playWhenReady = true
                                 } else {
-                                    playerConnection.player.togglePlayPause()
+                                    playerConnection.togglePlayPause()
                                 }
                             },
                 ) {
@@ -1950,12 +1960,13 @@ fun BottomSheetPlayer(
                         Slider(
                             value = (sliderPosition ?: position).toFloat(),
                             valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
+                            enabled = canControlPlayback,
                             onValueChange = {
                                 sliderPosition = it.toLong()
                             },
                             onValueChangeFinished = {
                                 sliderPosition?.let {
-                                    playerConnection.player.seekTo(it)
+                                    playerConnection.seekTo(it)
                                     position = it
                                 }
                                 sliderPosition = null
@@ -1972,12 +1983,13 @@ fun BottomSheetPlayer(
                         SquigglySlider(
                             value = (sliderPosition ?: position).toFloat(),
                             valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
+                            enabled = canControlPlayback,
                             onValueChange = {
                                 sliderPosition = it.toLong()
                             },
                             onValueChangeFinished = {
                                 sliderPosition?.let {
-                                    playerConnection.player.seekTo(it)
+                                    playerConnection.seekTo(it)
                                     position = it
                                 }
                                 sliderPosition = null
@@ -1998,12 +2010,13 @@ fun BottomSheetPlayer(
                         Slider(
                             value = (sliderPosition ?: position).toFloat(),
                             valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
+                            enabled = canControlPlayback,
                             onValueChange = {
                                 sliderPosition = it.toLong()
                             },
                             onValueChangeFinished = {
                                 sliderPosition?.let {
-                                    playerConnection.player.seekTo(it)
+                                    playerConnection.seekTo(it)
                                     position = it
                                 }
                                 sliderPosition = null
@@ -2069,7 +2082,7 @@ fun BottomSheetPlayer(
                                     playerConnection.player.seekTo(0, 0)
                                     playerConnection.player.playWhenReady = true
                                 } else {
-                                    playerConnection.player.togglePlayPause()
+                                    playerConnection.togglePlayPause()
                                 }
                             },
                     ) {
@@ -2226,11 +2239,11 @@ fun BottomSheetPlayer(
                 },
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
                 onNext = playerConnection::seekToNext,
                 onShuffle = { playerConnection.toggleShuffle() },
                 onRepeat = { playerConnection.toggleRepeatMode() },
@@ -2263,11 +2276,11 @@ fun BottomSheetPlayer(
                 shuffleModeEnabled = shuffleModeEnabled,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
                 onNext = playerConnection::seekToNext,
                 onShuffle = { playerConnection.toggleShuffle() },
                 onRepeat = { playerConnection.toggleRepeatMode() },
@@ -2307,11 +2320,11 @@ fun BottomSheetPlayer(
                 shuffleModeEnabled = shuffleModeEnabled,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
                 onNext = playerConnection::seekToNext,
                 onShuffle = { playerConnection.toggleShuffle() },
                 onRepeat = { playerConnection.toggleRepeatMode() },
@@ -2351,11 +2364,11 @@ fun BottomSheetPlayer(
                 shuffleModeEnabled = shuffleModeEnabled,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
                 onNext = playerConnection::seekToNext,
                 onShuffle = { playerConnection.toggleShuffle() },
                 onRepeat = { playerConnection.toggleRepeatMode() },
@@ -2393,21 +2406,19 @@ fun BottomSheetPlayer(
                 canSkipNext = canSkipNext,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
                 onPlayPause = {
                     if (playbackState == androidx.media3.common.Player.STATE_IDLE || playbackState == androidx.media3.common.Player.STATE_ENDED) {
                         playerConnection.player.seekToDefaultPosition()
                         playerConnection.player.playWhenReady = true
-                    } else if (isPlaying) {
-                        playerConnection.player.pause()
                     } else {
-                        playerConnection.player.play()
+                        playerConnection.togglePlayPause()
                     }
                 },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 shuffleModeEnabled = shuffleModeEnabled,
                 onShuffleClick = { playerConnection.toggleShuffle() },
@@ -2463,11 +2474,11 @@ fun BottomSheetPlayer(
                             lyricsPreview = (spotifyLyricsEntity ?: currentLyrics)?.lyrics,
                             onSeek = { sliderPosition = it },
                             onSeekFinished = {
-                                sliderPosition?.let { playerConnection.player.seekTo(it) }
+                                sliderPosition?.let { playerConnection.seekTo(it) }
                                 sliderPosition = null
                             },
-                            onPlayPause = { playerConnection.player.togglePlayPause() },
-                            onPrevious = { playerConnection.player.seekToPrevious() },
+                            onPlayPause = { playerConnection.togglePlayPause() },
+                            onPrevious = { playerConnection.seekToPrevious() },
                             onNext = playerConnection::seekToNext,
                             onShuffle = { playerConnection.toggleShuffle() },
                             onRepeat = { playerConnection.toggleRepeatMode() },
@@ -2550,7 +2561,7 @@ fun BottomSheetPlayer(
                     onLyricsClick = onOpenFullscreenLyrics,
                     onSliderValueChange = { sliderPosition = it },
                     onSliderValueChangeFinished = {
-                        sliderPosition?.let { playerConnection.player.seekTo(it) }
+                        sliderPosition?.let { playerConnection.seekTo(it) }
                         sliderPosition = null
                     },
                     onSleepTimerClick = {
@@ -2595,15 +2606,15 @@ fun BottomSheetPlayer(
                 onSliderPositionChange = { sliderPosition = it },
                 onSliderPositionChangeFinished = {
                     sliderPosition?.let {
-                        playerConnection.player.seekTo(it)
+                        playerConnection.seekTo(it)
                     }
                     sliderPosition = null
                 },
                 isPlaying = isPlaying,
                 isLoading = playbackState != Player.STATE_READY && playbackState != Player.STATE_ENDED,
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 shuffleModeEnabled = shuffleModeEnabled,
                 onShuffleClick = { playerConnection.toggleShuffle() },
@@ -2635,13 +2646,13 @@ fun BottomSheetPlayer(
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
                     sliderPosition?.let {
-                        playerConnection.player.seekTo(it)
+                        playerConnection.seekTo(it)
                     }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 onMenuClick = {
                     menuState.show {
@@ -2678,13 +2689,13 @@ fun BottomSheetPlayer(
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
                     sliderPosition?.let {
-                        playerConnection.player.seekTo(it)
+                        playerConnection.seekTo(it)
                     }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 onMenuClick = {
                     menuState.show {
@@ -2717,14 +2728,14 @@ fun BottomSheetPlayer(
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
                     sliderPosition?.let {
-                        playerConnection.player.seekTo(it)
+                        playerConnection.seekTo(it)
                     }
                     sliderPosition = null
                 },
                 onOpenFullscreenLyrics = onOpenFullscreenLyrics,
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 onMenuClick = {
                     menuState.show {
@@ -2755,12 +2766,12 @@ fun BottomSheetPlayer(
                 canSkipNext = canSkipNext,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 onMenuClick = {
                     menuState.show {
@@ -2809,12 +2820,12 @@ fun BottomSheetPlayer(
                 canSkipNext = canSkipNext,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 onMenuClick = {
                     menuState.show {
@@ -2870,12 +2881,12 @@ fun BottomSheetPlayer(
                 canSkipNext = canSkipNext,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 onMenuClick = {
                     menuState.show {
@@ -2924,12 +2935,12 @@ fun BottomSheetPlayer(
                 canSkipNext = canSkipNext,
                 onSeek = { sliderPosition = it },
                 onSeekFinished = {
-                    sliderPosition?.let { playerConnection.player.seekTo(it) }
+                    sliderPosition?.let { playerConnection.seekTo(it) }
                     sliderPosition = null
                 },
-                onPlayPause = { playerConnection.player.togglePlayPause() },
-                onPrevious = { playerConnection.player.seekToPrevious() },
-                onNext = { playerConnection.player.seekToNext() },
+                onPlayPause = { playerConnection.togglePlayPause() },
+                onPrevious = { playerConnection.seekToPrevious() },
+                onNext = { playerConnection.seekToNext() },
                 onCollapse = state::collapseSoft,
                 onMenuClick = {
                     menuState.show {
@@ -3499,6 +3510,10 @@ private fun SpotifyStyledSlider(
     onSeekFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val togetherSession by ListenTogetherSync.session.collectAsState()
+    val isTogetherHost by ListenTogetherSync.isHost.collectAsState()
+    val enabled = togetherSession == null || isTogetherHost || togetherSession?.settings?.allowGuestsToControlPlayback == true
+
     val valueRange = 0f..duration.coerceAtLeast(1L).toFloat()
     val sliderColors = SliderDefaults.colors(
         thumbColor = Color.White,
@@ -3511,6 +3526,7 @@ private fun SpotifyStyledSlider(
             Slider(
                 value = value,
                 valueRange = valueRange,
+                enabled = enabled,
                 onValueChange = { onSeek(it.toLong()) },
                 onValueChangeFinished = onSeekFinished,
                 colors = sliderColors,
@@ -3522,6 +3538,7 @@ private fun SpotifyStyledSlider(
             SquigglySlider(
                 value = value,
                 valueRange = valueRange,
+                enabled = enabled,
                 onValueChange = { onSeek(it.toLong()) },
                 onValueChangeFinished = onSeekFinished,
                 colors = PlayerSliderColors.getSliderColors(
@@ -3541,6 +3558,7 @@ private fun SpotifyStyledSlider(
             Slider(
                 value = value,
                 valueRange = valueRange,
+                enabled = enabled,
                 onValueChange = { onSeek(it.toLong()) },
                 onValueChangeFinished = onSeekFinished,
                 thumb = { Spacer(modifier = Modifier.size(0.dp)) },

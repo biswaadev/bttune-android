@@ -26,17 +26,23 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -118,6 +124,21 @@ private object MusicTogetherSpacing {
     val lg = 32.dp
 }
 
+private fun isTechnicalNoise(msg: String?): Boolean {
+    if (msg.isNullOrBlank()) return true
+    val lower = msg.lowercase()
+    return lower.contains("cancelled") ||
+           lower.contains("timeout") ||
+           lower.contains("left session") ||
+           lower.contains("socket") ||
+           lower.contains("broken pipe") ||
+           lower.contains("reset by peer") ||
+           lower.contains("eofexception") ||
+           lower.contains("standalonecoroutine") ||
+           lower.contains("jobcancellationexception") ||
+           lower.contains("b2 was")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListenTogetherScreen(
@@ -158,6 +179,7 @@ fun ListenTogetherScreen(
     var isScanningLan by remember { mutableStateOf(false) }
     var discoveredHosts by remember { mutableStateOf<List<DiscoveredLanHost>>(emptyList()) }
     var message by remember { mutableStateOf<String?>(null) }
+    var expandedSection by rememberSaveable { mutableStateOf<String?>(null) }
 
     var showDisplayNameDialog by remember { mutableStateOf(false) }
     var showPortDialog by remember { mutableStateOf(false) }
@@ -192,11 +214,14 @@ fun ListenTogetherScreen(
     }
 
     LaunchedEffect(syncedSession, syncedIsHost) {
-        syncedSession?.let {
-            session = it
+        if (syncedSession != null) {
+            session = syncedSession
             isHost = syncedIsHost
-            hostAllowGuestsToControlPlayback = it.settings.allowGuestsToControlPlayback
-            hostAllowGuestsToAddTracks = it.settings.allowGuestsToAddTracks
+            hostAllowGuestsToControlPlayback = syncedSession?.settings?.allowGuestsToControlPlayback ?: false
+            hostAllowGuestsToAddTracks = syncedSession?.settings?.allowGuestsToAddTracks ?: true
+        } else {
+            session = null
+            isHost = false
         }
     }
 
@@ -209,7 +234,18 @@ fun ListenTogetherScreen(
     }
 
     LaunchedEffect(syncMessage) {
-        syncMessage?.let { message = it }
+        syncMessage?.let {
+            if (!isTechnicalNoise(it)) {
+                message = it
+            }
+        }
+    }
+
+    LaunchedEffect(message) {
+        if (!message.isNullOrBlank()) {
+            delay(3500)
+            message = null
+        }
     }
 
     // Dialogs
@@ -317,13 +353,14 @@ fun ListenTogetherScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = MusicTogetherSpacing.sm, vertical = MusicTogetherSpacing.xs)
             ) {
+                val activeSession = syncedSession ?: session
                 val isLan = currentConnectionMode == ListenTogetherConnectionMode.LAN
-                val controlsAllowed = isHost || (session?.settings?.allowGuestsToControlPlayback == true)
+                val controlsAllowed = isHost || syncedIsHost || (activeSession?.settings?.allowGuestsToControlPlayback == true)
 
                 // 1. Status Card
                 StatusCard(
-                    session = session,
-                    isHost = isHost,
+                    session = activeSession,
+                    isHost = isHost || syncedIsHost,
                     isLan = isLan,
                     errorMessage = message,
                     onCopy = { code ->
@@ -346,24 +383,24 @@ fun ListenTogetherScreen(
                         ListenTogetherSync.leaveSession()
                         session = null
                         isHost = false
-                        message = leftSessionMessage
+                        message = null
                     }
                 )
 
                 // 2. Playback Card
                 PlaybackCard(
-                    songTitle = mediaMetadata?.title ?: session?.state?.title,
-                    subtitle = mediaMetadata?.artists?.joinToString { it.name } ?: session?.state?.artists?.joinToString(),
-                    thumbnailUrl = mediaMetadata?.thumbnailUrl ?: session?.state?.thumbnailUrl,
+                    songTitle = mediaMetadata?.title ?: activeSession?.state?.title,
+                    subtitle = mediaMetadata?.artists?.joinToString { it.name } ?: activeSession?.state?.artists?.joinToString(),
+                    thumbnailUrl = mediaMetadata?.thumbnailUrl ?: activeSession?.state?.thumbnailUrl,
                     isPlaying = isPlaying,
                     isBuffering = playbackState == Player.STATE_BUFFERING,
                     queueSize = queueWindows.size,
                     shuffleEnabled = shuffleModeEnabled,
                     repeatMode = repeatMode,
-                    sessionActive = session != null,
+                    sessionActive = activeSession != null,
                     controlsEnabled = controlsAllowed,
                     onPrevious = {
-                        if (isHost) {
+                        if (isHost || syncedIsHost) {
                             playerConnection?.seekToPrevious()
                         } else {
                             if (controlsAllowed) {
@@ -374,7 +411,7 @@ fun ListenTogetherScreen(
                         }
                     },
                     onPlayPause = {
-                        if (isHost) {
+                        if (isHost || syncedIsHost) {
                             playerConnection?.togglePlayPause()
                         } else {
                             if (controlsAllowed) {
@@ -385,7 +422,7 @@ fun ListenTogetherScreen(
                         }
                     },
                     onNext = {
-                        if (isHost) {
+                        if (isHost || syncedIsHost) {
                             playerConnection?.seekToNext()
                         } else {
                             if (controlsAllowed) {
@@ -398,10 +435,10 @@ fun ListenTogetherScreen(
                 )
 
                 // 3. Active Session Permissions Card
-                session?.let { activeSession ->
+                activeSession?.let { currentRoomSession ->
                     RoomPermissionsCard(
-                        session = activeSession,
-                        isHost = isHost,
+                        session = currentRoomSession,
+                        isHost = isHost || syncedIsHost,
                         onUpdateSettings = { allowPlayback, allowTracks ->
                             ListenTogetherSync.updateSettings(allowPlayback, allowTracks)
                         }
@@ -409,7 +446,7 @@ fun ListenTogetherScreen(
                 }
 
                 // 4. Host & Join Cards (when not in a session)
-                if (session == null) {
+                if (activeSession == null) {
                     HostControlsCard(
                         onlineMode = hostModeOnline,
                         onModeChange = { hostModeOnline = it },
@@ -423,6 +460,10 @@ fun ListenTogetherScreen(
                         onAllowGuestsToControlPlaybackChange = { hostAllowGuestsToControlPlayback = it },
                         isLoading = isLoading,
                         canStart = mediaMetadata != null && !isLoading,
+                        isExpanded = expandedSection == "host",
+                        onToggleExpand = {
+                            expandedSection = if (expandedSection == "host") null else "host"
+                        },
                         onStart = {
                             val metadata = mediaMetadata ?: return@HostControlsCard
                             isLoading = true
@@ -469,7 +510,10 @@ fun ListenTogetherScreen(
                                         message = "LAN host started on port $port"
                                     }
                                 } catch (e: Exception) {
-                                    message = e.message
+                                    val err = e.message
+                                    if (!isTechnicalNoise(err)) {
+                                        message = err
+                                    }
                                 } finally {
                                     isLoading = false
                                 }
@@ -492,6 +536,10 @@ fun ListenTogetherScreen(
                         isLoading = isLoading,
                         isScanningLan = isScanningLan,
                         discoveredHosts = discoveredHosts,
+                        isExpanded = expandedSection == "join",
+                        onToggleExpand = {
+                            expandedSection = if (expandedSection == "join") null else "join"
+                        },
                         onScanLan = {
                             isScanningLan = true
                             scope.launch {
@@ -511,7 +559,10 @@ fun ListenTogetherScreen(
                                         message = context.getString(R.string.together_no_hosts_found)
                                     }
                                 } catch (e: Exception) {
-                                    message = e.message
+                                    val err = e.message
+                                    if (!isTechnicalNoise(err)) {
+                                        message = err
+                                    }
                                 } finally {
                                     isScanningLan = false
                                 }
@@ -545,7 +596,10 @@ fun ListenTogetherScreen(
                                         ListenTogetherSync.joinLanSession(lanHostInput)
                                     }
                                 } catch (e: Exception) {
-                                    message = e.message
+                                    val err = e.message
+                                    if (!isTechnicalNoise(err)) {
+                                        message = err
+                                    }
                                 } finally {
                                     isLoading = false
                                 }
@@ -555,11 +609,11 @@ fun ListenTogetherScreen(
                 }
 
                 // 5. LAN Web Player Button
-                if (isLan && session != null) {
+                if (isLan && activeSession != null) {
                     OutlinedButton(
                         onClick = {
                             runCatching {
-                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://${session?.code}"))
+                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://${activeSession.code}"))
                                 context.startActivity(browserIntent)
                             }.onFailure {
                                 message = "Could not open browser: ${it.message}"
@@ -573,18 +627,20 @@ fun ListenTogetherScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(MusicTogetherSpacing.xs))
-                        Text("Open Web Player (http://${session?.code})")
+                        Text("Open Web Player (http://${activeSession.code})")
                     }
                 }
 
                 // 6. Participants Card
-                session?.let { activeSession ->
+                activeSession?.let { currentRoomSession ->
                     ParticipantsCard(
-                        participants = activeSession.participantList,
-                        isHost = isHost,
+                        participants = currentRoomSession.participantList,
+                        isHost = isHost || syncedIsHost,
                         onKick = { participant -> kickTarget = participant }
                     )
                 }
+
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
     }
@@ -601,8 +657,9 @@ private fun StatusCard(
     onLeave: () -> Unit,
 ) {
     val isActive = session != null
+    val displayError = errorMessage?.takeIf { !isTechnicalNoise(it) }
     val accent = when {
-        errorMessage != null && !isActive -> MaterialTheme.colorScheme.error
+        displayError != null && !isActive -> MaterialTheme.colorScheme.error
         isActive -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -673,14 +730,14 @@ private fun StatusCard(
                 }
             }
 
-            if (errorMessage != null) {
+            if (displayError != null) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
                 ) {
                     Text(
-                        text = errorMessage,
+                        text = displayError,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(MusicTogetherSpacing.sm),
@@ -927,6 +984,8 @@ private fun HostControlsCard(
     onAllowGuestsToControlPlaybackChange: (Boolean) -> Unit,
     isLoading: Boolean,
     canStart: Boolean,
+    isExpanded: Boolean = false,
+    onToggleExpand: () -> Unit = {},
     onStart: () -> Unit,
 ) {
     SectionCard(
@@ -934,6 +993,9 @@ private fun HostControlsCard(
         titleResId = R.string.together_host_section,
         subtitle = displayName,
         accent = MaterialTheme.colorScheme.primary,
+        isCollapsible = true,
+        isExpanded = isExpanded,
+        onHeaderClick = onToggleExpand,
     ) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             SegmentedButton(
@@ -1032,15 +1094,23 @@ private fun JoinControlsCard(
     isLoading: Boolean,
     isScanningLan: Boolean,
     discoveredHosts: List<DiscoveredLanHost>,
+    isExpanded: Boolean = false,
+    onToggleExpand: () -> Unit = {},
     onScanLan: () -> Unit,
     onSelectHost: (DiscoveredLanHost) -> Unit,
     onJoin: () -> Unit,
 ) {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+
     SectionCard(
         iconResId = R.drawable.multi_user,
         titleResId = R.string.together_join_section,
         subtitleResId = R.string.join_session,
         accent = MaterialTheme.colorScheme.tertiary,
+        isCollapsible = true,
+        isExpanded = isExpanded,
+        onHeaderClick = onToggleExpand,
     ) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             SegmentedButton(
@@ -1079,7 +1149,17 @@ private fun JoinControlsCard(
             label = { Text(stringResource(if (onlineMode) R.string.session_code else R.string.together_host_ip)) },
             placeholder = { Text(stringResource(if (onlineMode) R.string.together_join_hint else R.string.together_host_ip_hint)) },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .bringIntoViewRequester(bringIntoViewRequester)
+                .onFocusEvent { focusState ->
+                    if (focusState.isFocused) {
+                        scope.launch {
+                            delay(250)
+                            bringIntoViewRequester.bringIntoView()
+                        }
+                    }
+                }
         )
 
         if (!onlineMode) {
@@ -1417,6 +1497,9 @@ private fun SectionCard(
     modifier: Modifier = Modifier,
     @StringRes subtitleResId: Int? = null,
     subtitle: String? = null,
+    isCollapsible: Boolean = false,
+    isExpanded: Boolean = true,
+    onHeaderClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
@@ -1429,11 +1512,20 @@ private fun SectionCard(
     ) {
         Column(
             modifier = Modifier.padding(MusicTogetherSpacing.sm),
-            verticalArrangement = Arrangement.spacedBy(MusicTogetherSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(if (isExpanded) MusicTogetherSpacing.sm else 0.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MusicTogetherSpacing.sm),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (isCollapsible && onHeaderClick != null) {
+                            Modifier
+                                .clip(MaterialTheme.shapes.large)
+                                .clickable(onClick = onHeaderClick)
+                        } else Modifier
+                    )
             ) {
                 AccentIcon(iconResId = iconResId, accent = accent)
                 Column(modifier = Modifier.weight(1f)) {
@@ -1457,8 +1549,21 @@ private fun SectionCard(
                         )
                     }
                 }
+                if (isCollapsible) {
+                    IconButton(onClick = { onHeaderClick?.invoke() }) {
+                        Icon(
+                            painter = painterResource(
+                                if (isExpanded) R.drawable.expand_less else R.drawable.expand_more
+                            ),
+                            contentDescription = if (isExpanded) "Collapse" else "Expand",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
-            content()
+            if (!isCollapsible || isExpanded) {
+                content()
+            }
         }
     }
 }

@@ -31,6 +31,7 @@ object ListenTogetherClient {
             JSONObject()
                 .put("name", displayName)
                 .put("state", state.toJson())
+                .put("settings", state.settings.toJson())
         ) { body ->
             ListenTogetherSession.fromJson(body)
         }
@@ -61,6 +62,7 @@ object ListenTogetherClient {
             JSONObject()
                 .put("participantId", participantId)
                 .put("state", state.toJson())
+                .put("settings", state.settings.toJson())
         ) { body ->
             ListenTogetherSession.fromJson(body)
         }
@@ -214,12 +216,12 @@ data class ListenTogetherParticipant(
 }
 
 data class ListenTogetherPlaybackState(
-    val songId: String,
-    val title: String,
-    val artists: List<String>,
-    val thumbnailUrl: String?,
-    val positionMs: Long,
-    val isPlaying: Boolean,
+    val songId: String = "",
+    val title: String = "",
+    val artists: List<String> = emptyList(),
+    val thumbnailUrl: String? = null,
+    val positionMs: Long = 0L,
+    val isPlaying: Boolean = false,
     val durationMs: Long = 0L,
     val updatedAt: Long = System.currentTimeMillis(),
     val settings: ListenTogetherSettings = ListenTogetherSettings(),

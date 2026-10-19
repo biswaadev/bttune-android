@@ -1,9 +1,6 @@
 name: Crowdin Action
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
 
 jobs:
@@ -14,6 +11,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: crowdin action
+        if: ${{ env.CROWDIN_PROJECT_ID != '' && env.CROWDIN_PERSONAL_TOKEN != '' }}
         uses: crowdin/github-action@v2
         with:
           upload_sources: true
