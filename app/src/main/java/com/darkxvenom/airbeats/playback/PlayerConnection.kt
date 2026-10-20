@@ -22,6 +22,7 @@ import com.darkxvenom.airbeats.extensions.currentMetadata
 import com.darkxvenom.airbeats.extensions.getCurrentQueueIndex
 import com.darkxvenom.airbeats.extensions.getQueueWindows
 import com.darkxvenom.airbeats.extensions.metadata
+import com.darkxvenom.airbeats.extensions.toMediaItem
 import com.darkxvenom.airbeats.extensions.toggleRepeatMode
 import com.darkxvenom.airbeats.playback.MusicService.MusicBinder
 import com.darkxvenom.airbeats.playback.queues.Queue
@@ -51,7 +52,7 @@ class PlayerConnection(
     private val context: Context,
     binder: MusicBinder,
     val database: MusicDatabase,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
 ) : Player.Listener {
 
     companion object {
