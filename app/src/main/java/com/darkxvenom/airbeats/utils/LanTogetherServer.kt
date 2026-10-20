@@ -230,9 +230,9 @@ class LanTogetherServer(
                         }
                     }
 
-                    if (action in listOf("add_track", "play_next")) {
-                        if (!isHostSender && !settings.allowGuestsToAddTracks) {
-                            val errJson = JSONObject().put("error", "Adding songs is disabled by the host")
+                    if (action in listOf("add_track", "play_next", "remove_track", "remove_song", "move_track")) {
+                        if (!isHostSender && !settings.allowGuestsToAddTracks && !settings.allowGuestsToControlPlayback) {
+                            val errJson = JSONObject().put("error", "Queue modification is disabled by the host")
                             return newFixedLengthResponse(Response.Status.FORBIDDEN, "application/json", errJson.toString()).apply { applyCors(this) }
                         }
                     }

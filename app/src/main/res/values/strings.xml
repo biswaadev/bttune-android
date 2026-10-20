@@ -459,6 +459,9 @@
     <string name="together_lan_host_started">LAN host started on %1$s</string>
     <string name="together_found_host">Found host: %1$s</string>
     <string name="together_room_permissions">Room Permissions</string>
+    <string name="together_shared_queue">Shared Queue</string>
+    <string name="together_queue_empty">Shared queue is empty</string>
+    <string name="together_queue_empty_desc">Add songs from Search, Playlists, or Albums to play next together!</string>
     <string name="together_allow_guest_playback">Guests can control playback</string>
     <string name="together_allow_guest_playback_desc">Allow guests to play, pause, seek, and skip tracks</string>
     <string name="together_allow_guest_tracks">Guests can add songs</string>
