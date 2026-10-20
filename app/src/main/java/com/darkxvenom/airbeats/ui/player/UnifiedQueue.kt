@@ -93,7 +93,8 @@ fun UnifiedQueue(
     }
 
     LaunchedEffect(endlessQueue, upcoming.size) {
-        if (endlessQueue && upcoming.isEmpty()) {
+        val isGuestTogether = com.darkxvenom.airbeats.utils.ListenTogetherSync.session.value != null && !com.darkxvenom.airbeats.utils.ListenTogetherSync.isHost.value
+        if (endlessQueue && upcoming.isEmpty() && !isGuestTogether) {
             playerConnection.service.triggerEndlessQueueIfNeeded()
         }
     }
@@ -222,7 +223,7 @@ fun UnifiedQueue(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { playerConnection.player.seekToDefaultPosition(item.index) }
+                                .clickable { playerConnection.playQueueIndex(item.index, item.value.mediaItem.mediaId) }
                                 .padding(vertical = 4.dp)
                                 .alpha(0.72f),
                         ) {
@@ -255,7 +256,7 @@ fun UnifiedQueue(
                                     DropdownMenuItem(
                                         text = { Text("Play now") },
                                         onClick = {
-                                            playerConnection.player.seekToDefaultPosition(item.index)
+                                            playerConnection.playQueueIndex(item.index, item.value.mediaItem.mediaId)
                                             actionMenuIndex = -1
                                         }
                                     )
@@ -263,14 +264,14 @@ fun UnifiedQueue(
                                         text = { Text("Play next") },
                                         onClick = {
                                             val target = (currentIndex + 1).coerceAtMost(queueWindows.lastIndex)
-                                            playerConnection.player.moveMediaItem(item.index, target)
+                                            playerConnection.moveQueueItem(item.index, target)
                                             actionMenuIndex = -1
                                         }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Remove") },
                                         onClick = {
-                                            playerConnection.player.removeMediaItem(item.index)
+                                            playerConnection.removeQueueItem(item.index, item.value.mediaItem.mediaId)
                                             actionMenuIndex = -1
                                         }
                                     )
@@ -306,7 +307,7 @@ fun UnifiedQueue(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { playerConnection.player.seekToDefaultPosition(item.index) }
+                                .clickable { playerConnection.playQueueIndex(item.index, item.value.mediaItem.mediaId) }
                                 .padding(vertical = 4.dp),
                         ) {
                             AsyncImage(model = metadata.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)))
@@ -320,9 +321,9 @@ fun UnifiedQueue(
                                     Icon(painterResource(R.drawable.more_vert), contentDescription = "Queue item options")
                                 }
                                 DropdownMenu(expanded = actionMenuIndex == item.index, onDismissRequest = { actionMenuIndex = -1 }) {
-                                    DropdownMenuItem(text = { Text("Move up") }, enabled = item.index > currentIndex + 1, onClick = { playerConnection.player.moveMediaItem(item.index, item.index - 1); actionMenuIndex = -1 })
-                                    DropdownMenuItem(text = { Text("Move down") }, enabled = item.index < queueWindows.lastIndex, onClick = { playerConnection.player.moveMediaItem(item.index, item.index + 1); actionMenuIndex = -1 })
-                                    DropdownMenuItem(text = { Text("Delete") }, onClick = { playerConnection.player.removeMediaItem(item.index); actionMenuIndex = -1 })
+                                    DropdownMenuItem(text = { Text("Move up") }, enabled = item.index > currentIndex + 1, onClick = { playerConnection.moveQueueItem(item.index, item.index - 1); actionMenuIndex = -1 })
+                                    DropdownMenuItem(text = { Text("Move down") }, enabled = item.index < queueWindows.lastIndex, onClick = { playerConnection.moveQueueItem(item.index, item.index + 1); actionMenuIndex = -1 })
+                                    DropdownMenuItem(text = { Text("Delete") }, onClick = { playerConnection.removeQueueItem(item.index, item.value.mediaItem.mediaId); actionMenuIndex = -1 })
                                 }
                             }
                         }

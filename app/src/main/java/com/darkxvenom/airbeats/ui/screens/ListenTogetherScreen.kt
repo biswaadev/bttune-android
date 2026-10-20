@@ -114,6 +114,7 @@ import com.darkxvenom.airbeats.utils.ListenTogetherClient
 import com.darkxvenom.airbeats.utils.ListenTogetherConnectionMode
 import com.darkxvenom.airbeats.utils.ListenTogetherParticipant
 import com.darkxvenom.airbeats.utils.ListenTogetherPlaybackState
+import com.darkxvenom.airbeats.utils.ListenTogetherQueueItem
 import com.darkxvenom.airbeats.utils.ListenTogetherSession
 import com.darkxvenom.airbeats.utils.ListenTogetherStore
 import com.darkxvenom.airbeats.utils.ListenTogetherSync
@@ -428,6 +429,18 @@ fun ListenTogetherScreen(
                     }
                 )
 
+                val sharedQueue by ListenTogetherSync.sharedQueue.collectAsState()
+                val remoteQueueSize = activeSession?.state?.totalQueueSize ?: 0
+                val displayQueueSize = if (activeSession != null) {
+                    if (isHost || syncedIsHost) {
+                        queueWindows.size
+                    } else {
+                        if (remoteQueueSize > 0) remoteQueueSize else maxOf(queueWindows.size, sharedQueue.size + 1)
+                    }
+                } else {
+                    queueWindows.size
+                }
+
                 // 2. Playback Card
                 PlaybackCard(
                     songTitle = mediaMetadata?.title ?: activeSession?.state?.title,
@@ -435,53 +448,53 @@ fun ListenTogetherScreen(
                     thumbnailUrl = mediaMetadata?.thumbnailUrl ?: activeSession?.state?.thumbnailUrl,
                     isPlaying = isPlaying,
                     isBuffering = playbackState == Player.STATE_BUFFERING,
-                    queueSize = queueWindows.size,
+                    queueSize = displayQueueSize,
                     shuffleEnabled = shuffleModeEnabled,
                     repeatMode = repeatMode,
                     sessionActive = activeSession != null,
                     controlsEnabled = controlsAllowed,
                     onPrevious = {
-                        if (isHost || syncedIsHost) {
+                        if (isHost || syncedIsHost || controlsAllowed) {
                             playerConnection?.seekToPrevious()
                         } else {
-                            if (controlsAllowed) {
-                                ListenTogetherSync.sendGuestAction("skip_previous")
-                            } else {
-                                message = context.getString(R.string.together_controls_disabled_notice)
-                            }
+                            message = context.getString(R.string.together_controls_disabled_notice)
                         }
                     },
                     onPlayPause = {
-                        if (isHost || syncedIsHost) {
+                        if (isHost || syncedIsHost || controlsAllowed) {
                             playerConnection?.togglePlayPause()
                         } else {
-                            if (controlsAllowed) {
-                                ListenTogetherSync.sendGuestAction("toggle_play_pause")
-                            } else {
-                                message = context.getString(R.string.together_controls_disabled_notice)
-                            }
+                            message = context.getString(R.string.together_controls_disabled_notice)
                         }
                     },
                     onNext = {
-                        if (isHost || syncedIsHost) {
+                        if (isHost || syncedIsHost || controlsAllowed) {
                             playerConnection?.seekToNext()
                         } else {
-                            if (controlsAllowed) {
-                                ListenTogetherSync.sendGuestAction("skip_next")
-                            } else {
-                                message = context.getString(R.string.together_controls_disabled_notice)
-                            }
+                            message = context.getString(R.string.together_controls_disabled_notice)
                         }
                     }
                 )
 
-                // 3. Active Session Permissions Card
+                // 3. Active Session Permissions & Shared Queue Cards
                 activeSession?.let { currentRoomSession ->
                     RoomPermissionsCard(
                         session = currentRoomSession,
                         isHost = isHost || syncedIsHost,
                         onUpdateSettings = { allowPlayback, allowTracks ->
                             ListenTogetherSync.updateSettings(allowPlayback, allowTracks)
+                        }
+                    )
+
+                    SharedQueueCard(
+                        queue = sharedQueue,
+                        canManageQueue = isHost || syncedIsHost || currentRoomSession.settings.allowGuestsToAddTracks || currentRoomSession.settings.allowGuestsToControlPlayback,
+                        canPlay = isHost || syncedIsHost || currentRoomSession.settings.allowGuestsToControlPlayback,
+                        onPlayItem = { index, songId ->
+                            playerConnection?.playQueueIndex(index, songId)
+                        },
+                        onRemoveItem = { index, songId ->
+                            playerConnection?.removeQueueItem(index, songId)
                         }
                     )
                 }
@@ -700,9 +713,16 @@ private fun StatusCard(
 ) {
     val isActive = session != null
     val displayError = errorMessage?.takeIf { !isTechnicalNoise(it) }
+    val isSuccessMessage = displayError != null && (
+        displayError.contains("created", ignoreCase = true) ||
+        displayError.contains("joined", ignoreCase = true) ||
+        displayError.contains("copied", ignoreCase = true) ||
+        displayError.contains("success", ignoreCase = true) ||
+        displayError.contains("connected", ignoreCase = true)
+    )
     val accent = when {
-        displayError != null && !isActive -> MaterialTheme.colorScheme.error
-        isActive -> MaterialTheme.colorScheme.primary
+        displayError != null && !isActive && !isSuccessMessage -> MaterialTheme.colorScheme.error
+        isActive || isSuccessMessage -> Color(0xFF4CAF50)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
@@ -773,15 +793,17 @@ private fun StatusCard(
             }
 
             if (displayError != null) {
+                val bannerBg = if (isSuccessMessage) Color(0xFF1B5E20).copy(alpha = 0.35f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                val bannerText = if (isSuccessMessage) Color(0xFF81C784) else MaterialTheme.colorScheme.onErrorContainer
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                    color = bannerBg,
                 ) {
                     Text(
                         text = displayError,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        color = bannerText,
                         modifier = Modifier.padding(MusicTogetherSpacing.sm),
                     )
                 }
@@ -1421,6 +1443,117 @@ private fun RoomPermissionsCard(
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
+        }
+    }
+}
+
+@Composable
+private fun SharedQueueCard(
+    queue: List<ListenTogetherQueueItem>,
+    canManageQueue: Boolean,
+    canPlay: Boolean,
+    onPlayItem: (index: Int, songId: String) -> Unit,
+    onRemoveItem: (index: Int, songId: String) -> Unit,
+) {
+    SectionCard(
+        iconResId = R.drawable.queue_music,
+        titleResId = R.string.together_shared_queue,
+        subtitle = "${queue.size} upcoming",
+        accent = MaterialTheme.colorScheme.primary,
+    ) {
+        if (queue.isEmpty()) {
+            EmptyPanel(
+                iconResId = R.drawable.queue_music,
+                titleResId = R.string.together_queue_empty,
+                bodyResId = R.string.together_queue_empty_desc,
+            )
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                queue.take(20).forEachIndexed { idx, item ->
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = item.title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        },
+                        supportingContent = if (item.artist.isNotBlank()) {
+                            {
+                                Text(
+                                    text = item.artist,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        } else null,
+                        leadingContent = {
+                            AsyncImage(
+                                model = item.thumbnailUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                            )
+                        },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (canPlay) {
+                                    IconButton(
+                                        onClick = { onPlayItem(idx + 1, item.songId) },
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.play),
+                                            contentDescription = "Play track",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                                if (canManageQueue) {
+                                    IconButton(
+                                        onClick = { onRemoveItem(idx + 1, item.songId) },
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.close),
+                                            contentDescription = "Remove track",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .then(
+                                if (canPlay) {
+                                    Modifier.clickable { onPlayItem(idx + 1, item.songId) }
+                                } else Modifier
+                            ),
+                    )
+                }
+                if (queue.size > 20) {
+                    Text(
+                        text = "+${queue.size - 20} more in queue (view in player queue)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(vertical = 4.dp),
+                    )
+                }
+            }
         }
     }
 }
