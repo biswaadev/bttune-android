@@ -592,14 +592,17 @@ object ListenTogetherSync {
                 val isWrongSong = remoteState.songId.isNotBlank() && currentSongId != remoteState.songId
                 val isNewVersion = remoteSession.stateVersion > lastAppliedVersion
 
-                if (isWrongSong || isNewVersion) {
+                if (now > suppressLocalSyncUntil) {
+                    if (isWrongSong || isNewVersion) {
+                        applyRemoteState(connection, remoteSession)
+                        lastAppliedVersion = remoteSession.stateVersion
+                        return@onSuccess
+                    }
+                    softCorrectPosition(connection, remoteSession)
+                } else if (isNewVersion) {
                     applyRemoteState(connection, remoteSession)
                     lastAppliedVersion = remoteSession.stateVersion
                     return@onSuccess
-                }
-
-                if (now > suppressLocalSyncUntil) {
-                    softCorrectPosition(connection, remoteSession)
                 }
             }.onFailure {
                 setDisplayMessage(it.message)
@@ -765,14 +768,17 @@ object ListenTogetherSync {
             val isWrongSong = remoteState.songId.isNotBlank() && currentSongId != remoteState.songId
             val isNewVersion = remoteSession.stateVersion > lastAppliedVersion
 
-            if (isWrongSong || isNewVersion) {
+            if (now > suppressLocalSyncUntil) {
+                if (isWrongSong || isNewVersion) {
+                    applyRemoteState(connection, remoteSession)
+                    lastAppliedVersion = remoteSession.stateVersion
+                    return@onSuccess
+                }
+                softCorrectPosition(connection, remoteSession)
+            } else if (isNewVersion) {
                 applyRemoteState(connection, remoteSession)
                 lastAppliedVersion = remoteSession.stateVersion
                 return@onSuccess
-            }
-
-            if (now > suppressLocalSyncUntil) {
-                softCorrectPosition(connection, remoteSession)
             }
         }.onFailure {
             Log.w(TAG, "syncOnceOnline failed: ${it.message}")
