@@ -28,10 +28,22 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import com.darkxvenom.airbeats.R
+import com.darkxvenom.airbeats.extensions.toMediaItem
+import com.darkxvenom.airbeats.innertube.YouTube
+import com.darkxvenom.airbeats.innertube.models.SongItem
+import com.darkxvenom.airbeats.innertube.models.WatchEndpoint
+import com.darkxvenom.airbeats.models.toMediaMetadata
+import com.darkxvenom.airbeats.playback.MusicService
+import com.darkxvenom.airbeats.playback.PlayerConnection
+import com.darkxvenom.airbeats.playback.queues.ListQueue
+import com.darkxvenom.airbeats.playback.queues.YouTubeQueue
+import com.darkxvenom.airbeats.providers.ProviderSearchManager
 import com.darkxvenom.airbeats.shazamkit.Shazam
 import com.darkxvenom.airbeats.shazamkit.ShazamSignatureGenerator
 import com.darkxvenom.airbeats.shazamkit.models.RecognitionResult
+import com.darkxvenom.airbeats.songs.IdentifiedSong
 import com.darkxvenom.airbeats.ui.sharedmusic.SharedMusicIdentificationActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -143,6 +155,7 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             }
             statusTextView?.text = displayTitle
             statusTextView?.setTextColor(Color.WHITE)
+            statusTextView?.isSelected = true
 
             scheduleAutoDismiss(10000L)
         }
@@ -273,23 +286,27 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         if (overlayView != null && isOverlayShowing) return
 
         try {
+            val displayMetrics = context.resources.displayMetrics
+            // Fixed compact pill width to maintain original length between states
+            val overlayWidth = minOf(dpToPx(320f).toInt(), (displayMetrics.widthPixels - dpToPx(24f)).toInt())
+
             // Main compact horizontal pill container matching user's design
             val card = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 val bg = GradientDrawable().apply {
                     setColor(Color.parseColor("#14131E"))
-                    cornerRadius = dpToPx(30f)
+                    cornerRadius = dpToPx(28f)
                     setStroke(dpToPx(1f).toInt(), Color.parseColor("#2C2B3C"))
                 }
                 background = bg
-                setPadding(dpToPx(12f).toInt(), dpToPx(10f).toInt(), dpToPx(10f).toInt(), dpToPx(10f).toInt())
+                setPadding(dpToPx(10f).toInt(), dpToPx(8f).toInt(), dpToPx(8f).toInt(), dpToPx(8f).toInt())
                 elevation = dpToPx(16f)
             }
 
             // Left: Official AirBeats App Icon (Circular)
             val iconView = ImageView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dpToPx(36f).toInt(), dpToPx(36f).toInt())
+                layoutParams = LinearLayout.LayoutParams(dpToPx(32f).toInt(), dpToPx(32f).toInt())
                 setImageResource(R.mipmap.ic_launcher_round)
                 clipToOutline = true
                 outlineProvider = object : ViewOutlineProvider() {
@@ -304,27 +321,30 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             val appTitleTv = TextView(context).apply {
                 text = "AirBeats"
                 setTextColor(Color.WHITE)
-                textSize = 15.5f
+                textSize = 14f
                 paint.isFakeBoldText = true
-                setPadding(dpToPx(8f).toInt(), 0, 0, 0)
+                setPadding(dpToPx(6f).toInt(), 0, 0, 0)
             }
             card.addView(appTitleTv)
 
             // Vertical subtle divider line
             val divider = View(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dpToPx(1f).toInt(), dpToPx(20f).toInt()).apply {
-                    marginStart = dpToPx(12f).toInt()
-                    marginEnd = dpToPx(12f).toInt()
+                layoutParams = LinearLayout.LayoutParams(dpToPx(1f).toInt(), dpToPx(18f).toInt()).apply {
+                    marginStart = dpToPx(8f).toInt()
+                    marginEnd = dpToPx(8f).toInt()
                 }
                 setBackgroundColor(Color.parseColor("#2C2B3C"))
             }
             card.addView(divider)
 
-            // Middle Section Container (Waveform bars + Status text)
+            // Middle Section Container (Waveform bars + Status/Song text)
+            // Weight = 1f ensures the overlay width never changes when play button toggles
             val middleSection = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                isClickable = true
+                isFocusable = true
                 setOnClickListener {
                     if (currentResult != null) {
                         launchReelIdentificationScreen(autoPlay = false)
@@ -338,15 +358,15 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             val waveContainer = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dpToPx(22f).toInt())
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dpToPx(18f).toInt())
             }
             waveformBars.clear()
-            val baseHeights = listOf(7f, 13f, 19f, 13f, 7f)
+            val baseHeights = listOf(6f, 11f, 16f, 11f, 6f)
             for (i in 0 until 5) {
                 val bar = View(context).apply {
                     val h = dpToPx(baseHeights[i]).toInt()
-                    layoutParams = LinearLayout.LayoutParams(dpToPx(3.5f).toInt(), h).apply {
-                        marginStart = if (i == 0) 0 else dpToPx(2.5f).toInt()
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(3f).toInt(), h).apply {
+                        marginStart = if (i == 0) 0 else dpToPx(2f).toInt()
                     }
                     val barDrawable = GradientDrawable().apply {
                         setColor(Color.parseColor("#8364FF"))
@@ -360,27 +380,29 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
             waveformContainer = waveContainer
             middleSection.addView(waveContainer)
 
-            // Status label ("Listening for music...")
+            // Status label ("Listening for music..." or "🎵 Title • Artist")
             val statusTv = TextView(context).apply {
                 text = "Listening for music..."
                 setTextColor(Color.parseColor("#E0E0E0"))
-                textSize = 13.5f
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dpToPx(10f).toInt(), 0, dpToPx(6f).toInt(), 0)
-                val displayMetrics = context.resources.displayMetrics
-                val maxMiddleWidth = (displayMetrics.widthPixels - dpToPx(210f)).toInt()
-                maxWidth = maxMiddleWidth.coerceAtLeast(dpToPx(130f).toInt())
+                textSize = 13f
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+                marqueeRepeatLimit = -1
+                isSelected = true
+                isFocusable = true
+                setHorizontallyScrolling(true)
+                setPadding(dpToPx(6f).toInt(), 0, dpToPx(4f).toInt(), 0)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             }
             statusTextView = statusTv
             middleSection.addView(statusTv)
 
             card.addView(middleSection)
 
-            // Right 1: Circular Play Button (▶)
+            // Right 1: Sleek Circular Vector Play Button
             val playBtnFrame = FrameLayout(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dpToPx(34f).toInt(), dpToPx(34f).toInt()).apply {
-                    marginStart = dpToPx(8f).toInt()
+                layoutParams = LinearLayout.LayoutParams(dpToPx(32f).toInt(), dpToPx(32f).toInt()).apply {
+                    marginStart = dpToPx(6f).toInt()
                 }
                 val playBg = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
@@ -390,27 +412,28 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
                 visibility = View.GONE
                 setOnClickListener {
                     if (currentResult != null) {
-                        launchReelIdentificationScreen(autoPlay = true)
+                        playSongInBackground(currentResult)
                     }
                 }
             }
 
-            val playTv = TextView(context).apply {
-                text = "▶"
-                setTextColor(Color.WHITE)
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(dpToPx(2f).toInt(), 0, 0, 0)
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            val playIv = ImageView(context).apply {
+                setImageResource(R.drawable.play)
+                setColorFilter(Color.WHITE)
+                val iconSize = dpToPx(16f).toInt()
+                layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
+                    gravity = Gravity.CENTER
+                    marginStart = dpToPx(1.5f).toInt()
+                }
             }
-            playBtnFrame.addView(playTv)
+            playBtnFrame.addView(playIv)
             playButton = playBtnFrame
             card.addView(playBtnFrame)
 
-            // Right 2: Circular close button (✕)
+            // Right 2: Sleek Circular Vector Close Button (✕)
             val closeBtnFrame = FrameLayout(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dpToPx(34f).toInt(), dpToPx(34f).toInt()).apply {
-                    marginStart = dpToPx(6f).toInt()
+                layoutParams = LinearLayout.LayoutParams(dpToPx(32f).toInt(), dpToPx(32f).toInt()).apply {
+                    marginStart = dpToPx(5f).toInt()
                 }
                 val closeBg = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
@@ -420,19 +443,19 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
                 setOnClickListener { hide() }
             }
 
-            val closeTv = TextView(context).apply {
-                text = "✕"
-                setTextColor(Color.WHITE)
-                textSize = 14f
-                gravity = Gravity.CENTER
-                paint.isFakeBoldText = true
-                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            val closeIv = ImageView(context).apply {
+                setImageResource(R.drawable.close)
+                setColorFilter(Color.parseColor("#D0D0E0"))
+                val iconSize = dpToPx(15f).toInt()
+                layoutParams = FrameLayout.LayoutParams(iconSize, iconSize).apply {
+                    gravity = Gravity.CENTER
+                }
             }
-            closeBtnFrame.addView(closeTv)
+            closeBtnFrame.addView(closeIv)
             card.addView(closeBtnFrame)
 
             val layoutParams = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                overlayWidth,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -458,6 +481,86 @@ class MusicRecognitionOverlayManager private constructor(private val context: Co
         } catch (e: Exception) {
             Timber.e(e, "Error adding music recognition overlay view")
         }
+    }
+
+    private fun playSongInBackground(res: RecognitionResult?) {
+        val result = res ?: return
+        hide()
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val song = IdentifiedSong(
+                    title = result.title,
+                    artist = result.artist,
+                    album = result.album,
+                    albumArtUrl = result.coverArtHqUrl ?: result.coverArtUrl,
+                    durationMs = null
+                )
+                val providerSearch = ProviderSearchManager(context)
+                val candidates = runCatching { providerSearch.searchProviders(song) }.getOrDefault(emptyList())
+                val topMatch = candidates.firstOrNull()
+
+                val service = ensureMusicService()
+
+                withContext(Dispatchers.Main) {
+                    if (topMatch != null && topMatch.id.isNotBlank()) {
+                        val queue = if (topMatch.provider == "JIOSAAVN") {
+                            ListQueue(
+                                title = topMatch.title,
+                                items = listOf(topMatch.mediaMetadata.toMediaItem())
+                            )
+                        } else {
+                            YouTubeQueue(
+                                WatchEndpoint(videoId = topMatch.id),
+                                topMatch.mediaMetadata
+                            )
+                        }
+                        val s = MusicService.instance ?: service
+                        s?.playQueue(queue, playWhenReady = true)
+                        s?.player?.play()
+                        PlayerConnection.instance?.playQueue(queue)
+                        Toast.makeText(context, "Playing: ${topMatch.title}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        scope.launch(Dispatchers.IO) {
+                            val query = "${result.title} ${result.artist.orEmpty()}".trim()
+                            val yt = runCatching { YouTube.search(query, YouTube.SearchFilter.FILTER_SONG).getOrNull() }.getOrNull()
+                            val topYt = yt?.items?.filterIsInstance<SongItem>()?.firstOrNull()
+                            withContext(Dispatchers.Main) {
+                                if (topYt != null) {
+                                    val q = YouTubeQueue(WatchEndpoint(topYt.id), topYt.toMediaMetadata())
+                                    val activeS = MusicService.instance ?: service
+                                    activeS?.playQueue(q, playWhenReady = true)
+                                    activeS?.player?.play()
+                                    PlayerConnection.instance?.playQueue(q)
+                                    Toast.makeText(context, "Playing: ${topYt.title}", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Couldn't find playable track", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error playing identified song in background")
+            }
+        }
+    }
+
+    private fun ensureMusicService(): MusicService? {
+        val service = MusicService.instance ?: PlayerConnection.instance?.service
+        if (service == null) {
+            try {
+                val intent = Intent(context, MusicService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to start MusicService")
+            }
+        }
+        return service ?: MusicService.instance ?: PlayerConnection.instance?.service
     }
 
     private fun launchReelIdentificationScreen(autoPlay: Boolean = false) {

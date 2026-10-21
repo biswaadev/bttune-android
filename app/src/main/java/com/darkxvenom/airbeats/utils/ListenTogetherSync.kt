@@ -948,7 +948,7 @@ object ListenTogetherSync {
         }
     }
 
-    fun onMediaItemTransitioned() {
+    fun onMediaItemTransitioned(newSongId: String? = null) {
         loadingSongId = null
         lastSongLoadAttempt = 0L
     }
