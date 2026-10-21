@@ -474,6 +474,7 @@
     <string name="together_idle">Not in a session</string>
     <string name="together_hosting">Hosting session</string>
     <string name="together_connected">Connected as guest</string>
+    <string name="together_connected_admin">Connected as admin</string>
     <string name="together_error_state">Error</string>
     <string name="together_current_playback">Current playback</string>
     <string name="together_playback_empty">Nothing playing</string>
@@ -492,6 +493,7 @@
     <string name="together_participants_empty_body">People who join this session will appear here.</string>
     <string name="together_role_host">Host</string>
     <string name="together_role_guest">Guest</string>
+    <string name="together_role_admin">Admin</string>
     <string name="together_kick">Kick</string>
     <string name="together_kick_confirm">Kick %1$s?</string>
     <string name="together_display_name">Display name</string>

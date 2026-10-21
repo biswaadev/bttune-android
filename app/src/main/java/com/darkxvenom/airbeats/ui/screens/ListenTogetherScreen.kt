@@ -409,6 +409,7 @@ fun ListenTogetherScreen(
                 StatusCard(
                     session = activeSession,
                     isHost = isHost || syncedIsHost,
+                    isAdmin = controlsAllowed,
                     isLan = isLan,
                     errorMessage = message,
                     onCopy = { code ->
@@ -701,6 +702,7 @@ fun ListenTogetherScreen(
                     ParticipantsCard(
                         participants = currentRoomSession.participantList,
                         isHost = isHost || syncedIsHost,
+                        allowGuestsControl = currentRoomSession.settings.allowGuestsToControlPlayback,
                         onKick = { participant -> kickTarget = participant }
                     )
                 }
@@ -715,6 +717,7 @@ fun ListenTogetherScreen(
 private fun StatusCard(
     session: ListenTogetherSession?,
     isHost: Boolean,
+    isAdmin: Boolean = false,
     isLan: Boolean,
     errorMessage: String?,
     onCopy: (String) -> Unit,
@@ -762,6 +765,7 @@ private fun StatusCard(
                     Text(
                         text = when {
                             session != null && isHost -> stringResource(R.string.together_hosting)
+                            session != null && isAdmin -> stringResource(R.string.together_connected_admin)
                             session != null -> stringResource(R.string.together_connected)
                             else -> stringResource(R.string.together_idle)
                         },
@@ -1701,6 +1705,7 @@ private fun SharedQueueCard(
 private fun ParticipantsCard(
     participants: List<ListenTogetherParticipant>,
     isHost: Boolean,
+    allowGuestsControl: Boolean = false,
     onKick: (ListenTogetherParticipant) -> Unit,
 ) {
     SectionCard(
@@ -1724,6 +1729,7 @@ private fun ParticipantsCard(
                     ParticipantRow(
                         participant = participant,
                         isHost = isHost,
+                        allowGuestsControl = allowGuestsControl,
                         onKick = { onKick(participant) }
                     )
                     if (index < participants.size - 1) {
@@ -1742,8 +1748,10 @@ private fun ParticipantsCard(
 private fun ParticipantRow(
     participant: ListenTogetherParticipant,
     isHost: Boolean,
+    allowGuestsControl: Boolean = false,
     onKick: () -> Unit,
 ) {
+    val isAdmin = participant.isHost || allowGuestsControl
     ListItem(
         headlineContent = {
             Text(
@@ -1755,7 +1763,13 @@ private fun ParticipantRow(
         },
         supportingContent = {
             Text(
-                text = stringResource(if (participant.isHost) R.string.together_role_host else R.string.together_role_guest),
+                text = stringResource(
+                    when {
+                        participant.isHost -> R.string.together_role_host
+                        allowGuestsControl -> R.string.together_role_admin
+                        else -> R.string.together_role_guest
+                    }
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
@@ -1764,8 +1778,8 @@ private fun ParticipantRow(
         },
         leadingContent = {
             AccentIcon(
-                iconResId = if (participant.isHost) R.drawable.fire else R.drawable.person,
-                accent = if (participant.isHost) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                iconResId = if (isAdmin) R.drawable.fire else R.drawable.person,
+                accent = if (participant.isHost) MaterialTheme.colorScheme.primary else if (allowGuestsControl) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary,
                 size = 40.dp,
             )
         },
@@ -1787,7 +1801,21 @@ private fun ParticipantRow(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                } else if (isHost) {
+                } else if (allowGuestsControl) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "ADMIN",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                if (!participant.isHost && isHost) {
                     IconButton(onClick = onKick) {
                         Icon(
                             painter = painterResource(R.drawable.close),
