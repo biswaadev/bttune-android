@@ -492,7 +492,8 @@ fun ListenTogetherScreen(
                         }
                     )
 
-                    SharedQueueCard(
+                    // Shared queue screen removed per user request: normal player queue is used
+                    if (false) SharedQueueCard(
                         queue = sharedQueue,
                         canManageQueue = isHost || syncedIsHost || currentRoomSession.settings.allowGuestsToAddTracks || currentRoomSession.settings.allowGuestsToControlPlayback,
                         canPlay = isHost || syncedIsHost || currentRoomSession.settings.allowGuestsToControlPlayback,
