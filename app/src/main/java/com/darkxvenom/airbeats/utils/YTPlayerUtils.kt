@@ -116,7 +116,7 @@ object YTPlayerUtils {
     fun markStreamClientFailed(videoId: String, clientKey: String?, httpStatusCode: Int?) {
         if (httpStatusCode != 403) return
         val normalizedClientKey = normalizeStreamClientKey(clientKey)
-        if (normalizedClientKey.isEmpty()) return
+        if (normalizedClientKey.isEmpty() || normalizedClientKey.startsWith("VISIONOS")) return
         failedStreamClientsUntil[buildFailedClientKey(videoId, normalizedClientKey)] =
             System.currentTimeMillis() + FAILED_CLIENT_BACKOFF_MS
     }
@@ -215,6 +215,13 @@ object YTPlayerUtils {
         Timber.tag(logTag).v("Signature timestamp: $signatureTimestamp")
 
         val isLoggedIn = YouTube.cookie != null
+        if (!isLoggedIn && YouTube.visitorData.isNullOrBlank()) {
+            Timber.tag(logTag).i("visitorData is null/blank, fetching before playback...")
+            YouTube.visitorData().getOrNull()?.let { newVisitorData ->
+                YouTube.visitorData = newVisitorData
+                Timber.tag(logTag).i("Obtained visitorData: $newVisitorData")
+            }
+        }
         val sessionId = if (isLoggedIn) YouTube.dataSyncId else YouTube.visitorData
         Timber.tag(logTag).v("Session authentication status: ${if (isLoggedIn) "Logged in" else "Not logged in"} (sessionId=${sessionId.orEmpty()})")
 
@@ -240,9 +247,9 @@ object YTPlayerUtils {
 
         Timber.tag(logTag).i("Fetching metadata response using client: ${metadataClient.clientName}")
         val metadataPlayerResponse =
-            YouTube.player(videoId, playlistId, preferredYouTubeClient, signatureTimestamp).getOrNull()
-                ?: YouTube.player(videoId, playlistId, IOS, signatureTimestamp).getOrNull()
-                ?: YouTube.player(videoId, playlistId, ANDROID_VR_NO_AUTH, signatureTimestamp).getOrNull()
+            YouTube.player(videoId, playlistId, preferredYouTubeClient, signatureTimestamp).getOrNull()?.takeIf { it.playabilityStatus.status == "OK" }
+                ?: YouTube.player(videoId, playlistId, IOS, signatureTimestamp).getOrNull()?.takeIf { it.playabilityStatus.status == "OK" }
+                ?: YouTube.player(videoId, playlistId, ANDROID_VR_NO_AUTH, signatureTimestamp).getOrNull()?.takeIf { it.playabilityStatus.status == "OK" }
                 ?: YouTube.player(videoId, playlistId, MAIN_CLIENT, signatureTimestamp).getOrThrow()
         val audioConfig = metadataPlayerResponse.playerConfig?.audioConfig
         val videoDetails = metadataPlayerResponse.videoDetails
@@ -294,19 +301,35 @@ object YTPlayerUtils {
                 val reason = streamPlayerResponse.playabilityStatus.reason.orEmpty()
                 val isLoginRecovery = isLoginRecoveryError(reason)
                 val isBotDetection = isBotDetectionError(reason)
-                Timber.tag(logTag).w(
-                    "Player response status not OK: ${streamPlayerResponse.playabilityStatus.status}, reason: $reason, loginRecovery: $isLoginRecovery, botDetection: $isBotDetection"
-                )
-                if (isLoginRecovery) {
-                    gateFailure = PlaybackGateFailure(
-                        clientName = client.clientName,
-                        status = streamPlayerResponse.playabilityStatus.status,
-                        reason = streamPlayerResponse.playabilityStatus.reason,
-                    )
-                } else if (isBotDetection) {
-                    botDetectedClients.add(client.clientName)
+
+                if (client == VISIONOS && !isLoggedIn) {
+                    Timber.tag(logTag).w("VISIONOS returned not OK ($reason), refreshing visitorData and retrying VISIONOS...")
+                    val refreshedVisitor = YouTube.visitorData().getOrNull()
+                    if (refreshedVisitor != null) {
+                        YouTube.visitorData = refreshedVisitor
+                        val retryResponse = YouTube.player(videoId, playlistId, VISIONOS, signatureTimestamp).getOrNull()
+                        if (retryResponse != null && retryResponse.playabilityStatus.status == "OK") {
+                            Timber.tag(logTag).i("VISIONOS retry succeeded with refreshed visitorData!")
+                            streamPlayerResponse = retryResponse
+                        }
+                    }
                 }
-                continue
+
+                if (streamPlayerResponse.playabilityStatus.status != "OK") {
+                    Timber.tag(logTag).w(
+                        "Player response status not OK: ${streamPlayerResponse.playabilityStatus.status}, reason: $reason, loginRecovery: $isLoginRecovery, botDetection: $isBotDetection"
+                    )
+                    if (isLoginRecovery) {
+                        gateFailure = PlaybackGateFailure(
+                            clientName = client.clientName,
+                            status = streamPlayerResponse.playabilityStatus.status,
+                            reason = streamPlayerResponse.playabilityStatus.reason,
+                        )
+                    } else if (isBotDetection) {
+                        botDetectedClients.add(client.clientName)
+                    }
+                    continue
+                }
             }
 
             val isMetered = networkMetered ?: connectivityManager.isActiveNetworkMetered
