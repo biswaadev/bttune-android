@@ -70,6 +70,8 @@ fun UnifiedQueue(
     val queueTitle by playerConnection.queueTitle.collectAsState()
     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsState()
     val repeatMode by playerConnection.repeatMode.collectAsState()
+    val sharedQueue by com.darkxvenom.airbeats.utils.ListenTogetherSync.sharedQueue.collectAsState()
+    val isTogetherSession = com.darkxvenom.airbeats.utils.ListenTogetherSync.session.collectAsState().value != null
     var endlessQueue by rememberPreference(AutoLoadMoreKey, defaultValue = true)
     val listState = rememberLazyListState()
     val currentItem = queueWindows.getOrNull(currentIndex)?.mediaItem
@@ -290,7 +292,10 @@ fun UnifiedQueue(
                     )
                 }
 
-                if (upcoming.isEmpty()) {
+                val hasUpcomingTimeline = upcoming.isNotEmpty()
+                val showSharedQueue = !hasUpcomingTimeline && isTogetherSession && sharedQueue.isNotEmpty()
+
+                if (!hasUpcomingTimeline && !showSharedQueue) {
                     item(key = "empty_upcoming") {
                         Text(
                             text = if (endlessQueue) "Finding more songs..." else "No more tracks in queue",
@@ -299,7 +304,7 @@ fun UnifiedQueue(
                             modifier = Modifier.padding(vertical = 12.dp)
                         )
                     }
-                } else {
+                } else if (hasUpcomingTimeline) {
                     itemsIndexed(upcoming, key = { _, item -> "${item.index}-${item.value.uid}" }) { _, item ->
                         val metadata = item.value.mediaItem.metadata ?: return@itemsIndexed
                         Row(
@@ -324,6 +329,37 @@ fun UnifiedQueue(
                                     DropdownMenuItem(text = { Text("Move up") }, enabled = item.index > currentIndex + 1, onClick = { playerConnection.moveQueueItem(item.index, item.index - 1); actionMenuIndex = -1 })
                                     DropdownMenuItem(text = { Text("Move down") }, enabled = item.index < queueWindows.lastIndex, onClick = { playerConnection.moveQueueItem(item.index, item.index + 1); actionMenuIndex = -1 })
                                     DropdownMenuItem(text = { Text("Delete") }, onClick = { playerConnection.removeQueueItem(item.index, item.value.mediaItem.mediaId); actionMenuIndex = -1 })
+                                }
+                            }
+                        }
+                    }
+                } else if (showSharedQueue) {
+                    itemsIndexed(sharedQueue, key = { idx, item -> "shared-${item.songId}-$idx" }) { idx, item ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { playerConnection.playQueueIndex(idx, item.songId) }
+                                .padding(vertical = 4.dp),
+                        ) {
+                            AsyncImage(model = item.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                                if (item.artist.isNotBlank()) {
+                                    Text(item.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            Box {
+                                IconButton(onClick = { actionMenuIndex = idx }) {
+                                    Icon(painterResource(R.drawable.more_vert), contentDescription = "Queue item options")
+                                }
+                                DropdownMenu(expanded = actionMenuIndex == idx, onDismissRequest = { actionMenuIndex = -1 }) {
+                                    DropdownMenuItem(text = { Text("Play now") }, onClick = { playerConnection.playQueueIndex(idx, item.songId); actionMenuIndex = -1 })
+                                    DropdownMenuItem(text = { Text("Move up") }, enabled = idx > 0, onClick = { playerConnection.moveQueueItem(idx, idx - 1, item.songId); actionMenuIndex = -1 })
+                                    DropdownMenuItem(text = { Text("Move down") }, enabled = idx < sharedQueue.lastIndex, onClick = { playerConnection.moveQueueItem(idx, idx + 1, item.songId); actionMenuIndex = -1 })
+                                    DropdownMenuItem(text = { Text("Delete") }, onClick = { playerConnection.removeQueueItem(idx, item.songId); actionMenuIndex = -1 })
                                 }
                             }
                         }

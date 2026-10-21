@@ -306,45 +306,57 @@ data class ListenTogetherPlaybackState(
     fun toJson(forOnlineWorker: Boolean = false): JSONObject {
         val cleanArtists = artists.filterNot { it.startsWith(META_PREFIX) || it.startsWith(QUEUE_PREFIX) }
         val artistsList = mutableListOf<String>()
-        cleanArtists.forEach { artistsList.add(it) }
 
         if (forOnlineWorker) {
+            // Worker restricts state.artists to max 8 items, max 120 chars each.
+            // Slot 0: Primary artist name (max 35 chars)
+            val primaryArtist = cleanArtists.firstOrNull()?.trim()?.take(35)?.ifBlank { null } ?: "AirBeats"
+            artistsList.add(primaryArtist)
+
+            // Slot 1: Compact metadata string (max 45 chars, well below 120 limit)
             val metaString = buildString {
                 append(META_PREFIX)
                 append("pb=").append(if (settings.allowGuestsToControlPlayback) "1" else "0")
                 append("&tr=").append(if (settings.allowGuestsToAddTracks) "1" else "0")
-                if (!actionCommand.isNullOrBlank()) {
-                    append("&cmd=").append(java.net.URLEncoder.encode(actionCommand, "UTF-8"))
-                }
-                if (!actionPayload.isNullOrBlank()) {
-                    append("&pl=").append(java.net.URLEncoder.encode(actionPayload, "UTF-8"))
-                }
-                if (!actionId.isNullOrBlank()) {
-                    append("&actId=").append(java.net.URLEncoder.encode(actionId, "UTF-8"))
-                }
                 if (durationMs > 0L) {
                     append("&dur=").append(durationMs)
                 }
                 if (totalQueueSize > 0) {
-                    append("&qSize=").append(totalQueueSize)
+                    append("&qs=").append(totalQueueSize)
                 }
             }
             artistsList.add(metaString)
 
+            // Slots 2..7: Queue chunks (3 songs per slot, strictly <= 105 chars so worker never slices/corrupts them)
             if (queue.isNotEmpty()) {
-                val itemsToPack = queue.take(30)
-                itemsToPack.chunked(5).forEachIndexed { idx, chunkItems ->
+                val itemsToPack = queue.take(18)
+                itemsToPack.chunked(3).take(6).forEachIndexed { idx, chunkItems ->
                     val payload = chunkItems.joinToString(";") { qItem ->
                         val safeTitle = qItem.title
                             .replace(";", " ")
                             .replace(":", " ")
+                            .replace("&", " ")
+                            .replace("#", " ")
                             .trim()
-                            .take(40)
+                            .take(20)
                         "${qItem.songId}:$safeTitle"
                     }
-                    artistsList.add("${QUEUE_PREFIX}$idx:$payload")
+                    artistsList.add("${QUEUE_PREFIX}$idx:$payload".take(115))
                 }
             }
+        } else {
+            cleanArtists.forEach { artistsList.add(it) }
+        }
+
+        val rawThumb = (thumbnailUrl ?: if (songId.isNotBlank()) "https://i.ytimg.com/vi/$songId/mqdefault.jpg" else null)?.substringBefore("#")
+        val effectiveThumbnailUrl = if (forOnlineWorker && !rawThumb.isNullOrBlank() && queue.isNotEmpty()) {
+            val qPayload = queue.take(15).joinToString(";") { qItem ->
+                val safeTitle = qItem.title.replace(";", " ").replace(":", " ").replace("#", " ").trim().take(15)
+                "${qItem.songId}:$safeTitle"
+            }
+            "$rawThumb#Q=$qPayload".take(580)
+        } else {
+            rawThumb
         }
 
         val queueArray = JSONArray()
@@ -354,7 +366,7 @@ data class ListenTogetherPlaybackState(
             .put("songId", songId)
             .put("title", title)
             .put("artists", JSONArray(artistsList))
-            .put("thumbnailUrl", thumbnailUrl)
+            .put("thumbnailUrl", effectiveThumbnailUrl)
             .put("positionMs", positionMs)
             .put("isPlaying", isPlaying)
             .put("durationMs", durationMs)
@@ -385,7 +397,6 @@ data class ListenTogetherPlaybackState(
 
             // 1. Direct JSON queue array (LAN mode or forward-compatible worker)
             val directQueueArray = json.optJSONArray("queue")
-            val hasDirectQueue = (directQueueArray?.length() ?: 0) > 0
             directQueueArray?.let { array ->
                 for (i in 0 until array.length()) {
                     array.optJSONObject(i)?.let { obj ->
@@ -394,7 +405,30 @@ data class ListenTogetherPlaybackState(
                 }
             }
 
-            // 2. Parse artists array (metadata and tunneled queue)
+            // 2. Parse tunneled queue from thumbnailUrl hash fragment (#Q=id:title;...)
+            val rawThumb = json.optString("thumbnailUrl").takeIf { it.isNotBlank() }
+            val cleanThumb = rawThumb?.substringBefore("#")
+            if (rawThumb != null && rawThumb.contains("#Q=")) {
+                val qPayload = rawThumb.substringAfter("#Q=").substringBefore("&")
+                qPayload.split(";").forEach { entry ->
+                    val colonIdx = entry.indexOf(':')
+                    if (colonIdx > 0) {
+                        val id = entry.substring(0, colonIdx).trim()
+                        val t = entry.substring(colonIdx + 1).trim()
+                        if (id.isNotBlank()) {
+                            parsedQueueItems.add(
+                                ListenTogetherQueueItem(
+                                    songId = id,
+                                    title = t.ifBlank { "Queued track" },
+                                    thumbnailUrl = "https://i.ytimg.com/vi/$id/mqdefault.jpg",
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Parse artists array (metadata and tunneled queue)
             json.optJSONArray("artists")?.let { array ->
                 for (i in 0 until array.length()) {
                     val item = array.optString(i)
@@ -417,25 +451,24 @@ data class ListenTogetherPlaybackState(
                         params["pl"]?.takeIf { it.isNotBlank() }?.let { parsedPayload = it }
                         params["actId"]?.takeIf { it.isNotBlank() }?.let { parsedActionId = it }
                         params["dur"]?.toLongOrNull()?.let { if (it > 0) parsedDuration = it }
-                        params["qSize"]?.toIntOrNull()?.let { if (it > 0) parsedQueueSize = it }
+                        val qs = params["qs"] ?: params["qSize"]
+                        qs?.toIntOrNull()?.let { if (it > 0) parsedQueueSize = it }
                     } else if (item.startsWith(QUEUE_PREFIX)) {
-                        if (!hasDirectQueue) {
-                            val payload = item.substringAfter(":")
-                            val entries = payload.split(";")
-                            for (entry in entries) {
-                                val colonIdx = entry.indexOf(':')
-                                if (colonIdx > 0) {
-                                    val id = entry.substring(0, colonIdx).trim()
-                                    val t = entry.substring(colonIdx + 1).trim()
-                                    if (id.isNotBlank()) {
-                                        parsedQueueItems.add(
-                                            ListenTogetherQueueItem(
-                                                songId = id,
-                                                title = t.ifBlank { "Queued track" },
-                                                thumbnailUrl = "https://i.ytimg.com/vi/$id/mqdefault.jpg",
-                                            )
+                        val payload = item.substringAfter(":")
+                        val entries = payload.split(";")
+                        for (entry in entries) {
+                            val colonIdx = entry.indexOf(':')
+                            if (colonIdx > 0) {
+                                val id = entry.substring(0, colonIdx).trim()
+                                val t = entry.substring(colonIdx + 1).trim()
+                                if (id.isNotBlank()) {
+                                    parsedQueueItems.add(
+                                        ListenTogetherQueueItem(
+                                            songId = id,
+                                            title = t.ifBlank { "Queued track" },
+                                            thumbnailUrl = "https://i.ytimg.com/vi/$id/mqdefault.jpg",
                                         )
-                                    }
+                                    )
                                 }
                             }
                         }
@@ -445,11 +478,13 @@ data class ListenTogetherPlaybackState(
                 }
             }
 
+            val distinctQueue = parsedQueueItems.distinctBy { it.songId }
+
             return ListenTogetherPlaybackState(
                 songId = json.optString("songId"),
                 title = json.optString("title"),
                 artists = cleanArtists,
-                thumbnailUrl = json.optString("thumbnailUrl").takeIf { it.isNotBlank() },
+                thumbnailUrl = cleanThumb,
                 positionMs = json.optLong("positionMs"),
                 isPlaying = json.optBoolean("isPlaying"),
                 durationMs = parsedDuration,
@@ -458,8 +493,8 @@ data class ListenTogetherPlaybackState(
                 actionCommand = parsedCommand,
                 actionPayload = parsedPayload,
                 actionId = parsedActionId,
-                queue = parsedQueueItems,
-                totalQueueSize = parsedQueueSize,
+                queue = distinctQueue,
+                totalQueueSize = if (parsedQueueSize > 0) parsedQueueSize else distinctQueue.size,
             )
         }
     }
