@@ -155,8 +155,23 @@ constructor(
                         com.darkxvenom.airbeats.utils.ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
                         return SessionResult.RESULT_ERROR_PERMISSION_DENIED
                     }
-                    com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_next")
-                    com.darkxvenom.airbeats.playback.PlayerConnection.instance?.seekToNext()
+                    val conn = com.darkxvenom.airbeats.playback.PlayerConnection.instance
+                    if (conn != null) {
+                        conn.seekToNext()
+                    } else {
+                        val player = session.player
+                        if (player.hasNextMediaItem()) {
+                            val nextItem = player.getMediaItemAt(player.currentMediaItemIndex + 1)
+                            val data = org.json.JSONObject().apply {
+                                put("songId", nextItem.mediaId)
+                            }
+                            com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_next", extraData = data)
+                            player.seekToNext()
+                            player.play()
+                        } else {
+                            com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_next")
+                        }
+                    }
                     return SessionResult.RESULT_SUCCESS
                 }
                 Player.COMMAND_SEEK_TO_PREVIOUS,
@@ -165,8 +180,25 @@ constructor(
                         com.darkxvenom.airbeats.utils.ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
                         return SessionResult.RESULT_ERROR_PERMISSION_DENIED
                     }
-                    com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_previous")
-                    com.darkxvenom.airbeats.playback.PlayerConnection.instance?.seekToPrevious()
+                    val conn = com.darkxvenom.airbeats.playback.PlayerConnection.instance
+                    if (conn != null) {
+                        conn.seekToPrevious()
+                    } else {
+                        val player = session.player
+                        if (player.hasPreviousMediaItem() && player.currentPosition < 3000) {
+                            val prevItem = player.getMediaItemAt(player.currentMediaItemIndex - 1)
+                            val data = org.json.JSONObject().apply {
+                                put("songId", prevItem.mediaId)
+                            }
+                            com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_previous", extraData = data)
+                            player.seekToPreviousMediaItem()
+                            player.play()
+                        } else {
+                            com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_previous")
+                            player.seekTo(0)
+                            player.play()
+                        }
+                    }
                     return SessionResult.RESULT_SUCCESS
                 }
                 Player.COMMAND_PLAY_PAUSE -> {
@@ -174,8 +206,13 @@ constructor(
                         com.darkxvenom.airbeats.utils.ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
                         return SessionResult.RESULT_ERROR_PERMISSION_DENIED
                     }
-                    com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("toggle_play_pause")
-                    com.darkxvenom.airbeats.playback.PlayerConnection.instance?.togglePlayPause()
+                    val conn = com.darkxvenom.airbeats.playback.PlayerConnection.instance
+                    if (conn != null) {
+                        conn.togglePlayPause()
+                    } else {
+                        com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("toggle_play_pause")
+                        session.player.playWhenReady = !session.player.playWhenReady
+                    }
                     return SessionResult.RESULT_SUCCESS
                 }
                 Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,

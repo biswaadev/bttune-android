@@ -510,10 +510,12 @@ class PlayerConnection(
 
             val targetInTimeline = if (!songId.isNullOrBlank()) {
                 val cur = player.currentMediaItemIndex
-                var match = -1
-                if (cur >= 0 && cur + 1 + index < player.mediaItemCount && player.getMediaItemAt(cur + 1 + index).mediaId == songId) {
+                if (index in 0 until player.mediaItemCount && player.getMediaItemAt(index).mediaId == songId) {
+                    index
+                } else if (cur >= 0 && cur + 1 + index < player.mediaItemCount && player.getMediaItemAt(cur + 1 + index).mediaId == songId) {
                     cur + 1 + index
                 } else {
+                    var match = -1
                     for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
                         if (player.getMediaItemAt(i).mediaId == songId) {
                             match = i
@@ -528,8 +530,8 @@ class PlayerConnection(
                             }
                         }
                     }
+                    match
                 }
-                match
             } else {
                 if (index in 0 until player.mediaItemCount) index else -1
             }
@@ -568,10 +570,12 @@ class PlayerConnection(
         try {
             val targetInTimeline = if (!songId.isNullOrBlank()) {
                 val cur = player.currentMediaItemIndex
-                var match = -1
-                if (cur >= 0 && cur + 1 + index < player.mediaItemCount && player.getMediaItemAt(cur + 1 + index).mediaId == songId) {
+                if (index in 0 until player.mediaItemCount && player.getMediaItemAt(index).mediaId == songId) {
+                    index
+                } else if (cur >= 0 && cur + 1 + index < player.mediaItemCount && player.getMediaItemAt(cur + 1 + index).mediaId == songId) {
                     cur + 1 + index
                 } else {
+                    var match = -1
                     for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
                         if (player.getMediaItemAt(i).mediaId == songId) {
                             match = i
@@ -586,8 +590,8 @@ class PlayerConnection(
                             }
                         }
                     }
+                    match
                 }
-                match
             } else {
                 if (index in 0 until player.mediaItemCount) index else -1
             }
@@ -628,8 +632,8 @@ class PlayerConnection(
             ListenTogetherSync.moveLocalSharedQueueItem(from, to)
 
             val cur = player.currentMediaItemIndex
-            val realFrom = if (cur >= 0 && cur + 1 + from < player.mediaItemCount) cur + 1 + from else from
-            val realTo = if (cur >= 0 && cur + 1 + to < player.mediaItemCount) cur + 1 + to else to
+            val realFrom = if (from in 0 until player.mediaItemCount) from else if (cur >= 0 && cur + 1 + from < player.mediaItemCount) cur + 1 + from else from
+            val realTo = if (to in 0 until player.mediaItemCount) to else if (cur >= 0 && cur + 1 + to < player.mediaItemCount) cur + 1 + to else to
 
             if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
                 val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToAddTracks == true ||
@@ -694,10 +698,16 @@ class PlayerConnection(
                     ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
                     return
                 }
-                ListenTogetherSync.sendGuestAction("skip_next")
                 if (player.hasNextMediaItem()) {
+                    val nextItem = player.getMediaItemAt(player.currentMediaItemIndex + 1)
+                    val data = org.json.JSONObject().apply {
+                        put("songId", nextItem.mediaId)
+                    }
+                    ListenTogetherSync.sendGuestAction("skip_next", extraData = data)
                     player.seekToNext()
                     player.play()
+                } else {
+                    ListenTogetherSync.sendGuestAction("skip_next")
                 }
                 return
             }
@@ -736,11 +746,16 @@ class PlayerConnection(
                     ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
                     return
                 }
-                ListenTogetherSync.sendGuestAction("skip_previous")
                 if (player.hasPreviousMediaItem() && player.currentPosition < 3000) {
+                    val prevItem = player.getMediaItemAt(player.currentMediaItemIndex - 1)
+                    val data = org.json.JSONObject().apply {
+                        put("songId", prevItem.mediaId)
+                    }
+                    ListenTogetherSync.sendGuestAction("skip_previous", extraData = data)
                     player.seekToPreviousMediaItem()
                     player.play()
                 } else {
+                    ListenTogetherSync.sendGuestAction("skip_previous")
                     player.seekTo(0)
                     player.play()
                 }

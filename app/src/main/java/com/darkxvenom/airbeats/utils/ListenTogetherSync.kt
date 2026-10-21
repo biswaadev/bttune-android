@@ -28,7 +28,7 @@ enum class ListenTogetherConnectionMode {
 object ListenTogetherSync {
     private const val TAG = "ListenTogetherSync"
     private const val SYNC_MS = 280L
-    private const val CONTROLLER_PUBLISH_MS = 600L
+    private const val CONTROLLER_PUBLISH_MS = 4000L
     private const val SEEK_TOLERANCE_MS = 1000L
     private const val ONLINE_SEEK_TOLERANCE_MS = 1800L
     private const val APPLY_GRACE_MS = 2500L
@@ -40,6 +40,7 @@ object ListenTogetherSync {
     private var lastAppliedVersion = 0L
     private var lastControllerPublishAt = 0L
     private var suppressLocalSyncUntil = 0L
+    private var pendingGuestSongId: String? = null
     private var lastHandledActionId: String? = null
     private var loadingSongId: String? = null
     private var lastSongLoadAttempt = 0L
@@ -634,25 +635,32 @@ object ListenTogetherSync {
                 val now = System.currentTimeMillis()
 
                 val currentSongId = connection.player.currentMediaItem?.mediaId
+                val isHostSong = remoteState.songId.isNotBlank() && currentSongId == remoteState.songId
+                val isPendingSongMatch = pendingGuestSongId != null && remoteState.songId == pendingGuestSongId
+
+                if (now < suppressLocalSyncUntil) {
+                    if (isPendingSongMatch || (pendingGuestSongId == null && isHostSong)) {
+                        suppressLocalSyncUntil = 0L
+                        pendingGuestSongId = null
+                        lastAppliedVersion = remoteSession.stateVersion
+                    } else {
+                        return@onSuccess
+                    }
+                } else {
+                    pendingGuestSongId = null
+                }
+
                 val isWrongSong = remoteState.songId.isNotBlank() && currentSongId != remoteState.songId
                 val isNewVersion = remoteSession.stateVersion > lastAppliedVersion
 
-                if (now > suppressLocalSyncUntil) {
-                    if (isWrongSong || isNewVersion) {
-                        applyRemoteState(connection, remoteSession)
-                        if (currentSongId == remoteState.songId) {
-                            lastAppliedVersion = remoteSession.stateVersion
-                        }
-                        return@onSuccess
-                    }
-                    softCorrectPosition(connection, remoteSession)
-                } else if (isWrongSong || isNewVersion) {
+                if (isWrongSong || isNewVersion) {
                     applyRemoteState(connection, remoteSession)
                     if (currentSongId == remoteState.songId) {
                         lastAppliedVersion = remoteSession.stateVersion
                     }
                     return@onSuccess
                 }
+                softCorrectPosition(connection, remoteSession)
             }.onFailure {
                 setDisplayMessage(it.message)
             }
@@ -851,25 +859,32 @@ object ListenTogetherSync {
             }
 
             val currentSongId = connection.player.currentMediaItem?.mediaId
+            val isHostSong = remoteState.songId.isNotBlank() && currentSongId == remoteState.songId
+            val isPendingSongMatch = pendingGuestSongId != null && remoteState.songId == pendingGuestSongId
+
+            if (now < suppressLocalSyncUntil) {
+                if (isPendingSongMatch || (pendingGuestSongId == null && isHostSong)) {
+                    suppressLocalSyncUntil = 0L
+                    pendingGuestSongId = null
+                    lastAppliedVersion = remoteSession.stateVersion
+                } else {
+                    return@onSuccess
+                }
+            } else {
+                pendingGuestSongId = null
+            }
+
             val isWrongSong = remoteState.songId.isNotBlank() && currentSongId != remoteState.songId
             val isNewVersion = remoteSession.stateVersion > lastAppliedVersion
 
-            if (now > suppressLocalSyncUntil) {
-                if (isWrongSong || isNewVersion) {
-                    applyRemoteState(connection, remoteSession)
-                    if (currentSongId == remoteState.songId) {
-                        lastAppliedVersion = remoteSession.stateVersion
-                    }
-                    return@onSuccess
-                }
-                softCorrectPosition(connection, remoteSession)
-            } else if (isWrongSong || isNewVersion) {
+            if (isWrongSong || isNewVersion) {
                 applyRemoteState(connection, remoteSession)
                 if (currentSongId == remoteState.songId) {
                     lastAppliedVersion = remoteSession.stateVersion
                 }
                 return@onSuccess
             }
+            softCorrectPosition(connection, remoteSession)
         }.onFailure {
             Log.w(TAG, "syncOnceOnline failed: ${it.message}")
         }
@@ -951,6 +966,10 @@ object ListenTogetherSync {
     fun onMediaItemTransitioned(newSongId: String? = null) {
         loadingSongId = null
         lastSongLoadAttempt = 0L
+        if (!newSongId.isNullOrBlank() && newSongId == pendingGuestSongId) {
+            pendingGuestSongId = null
+            suppressLocalSyncUntil = 0L
+        }
     }
 
     fun removeLocalSharedQueueItem(index: Int, songId: String? = null) {
@@ -1264,7 +1283,11 @@ object ListenTogetherSync {
             return true
         }
 
-        suppressLocalSyncUntil = System.currentTimeMillis() + 3000L
+        val targetSongId = extraData?.optString("songId")?.ifBlank { extraData.optString("id") }
+        if (!targetSongId.isNullOrBlank()) {
+            pendingGuestSongId = targetSongId
+        }
+        suppressLocalSyncUntil = System.currentTimeMillis() + 5000L
 
         scope.launch {
             runCatching {
@@ -1311,7 +1334,7 @@ object ListenTogetherSync {
                     state = updatedSession.state?.copy(settings = preservedSettings) ?: updatedSession.state
                 )
                 lastAppliedVersion = updatedSession.stateVersion
-                suppressLocalSyncUntil = System.currentTimeMillis() + 3000L
+                suppressLocalSyncUntil = System.currentTimeMillis() + 5000L
                 playerConnection?.let { conn ->
                     scope.launch {
                         delay(100L)
