@@ -531,7 +531,7 @@ class LanTogetherServer(
             controllerName = participants[controllerId]?.name ?: hostDisplayName,
             stateVersion = stateVersion,
             serverNow = System.currentTimeMillis(),
-            state = playbackState?.let { s -> s.copy(artists = s.artists.filterNot { it.startsWith(ListenTogetherClient.META_PREFIX) || it.startsWith(ListenTogetherClient.QUEUE_PREFIX) }, settings = settings) },
+            state = playbackState?.let { s -> s.copy(artists = s.artists.filterNot { it.startsWith(ListenTogetherPlaybackState.META_PREFIX) || it.startsWith(ListenTogetherPlaybackState.QUEUE_PREFIX) }, settings = settings) },
             settings = settings,
         )
     }

@@ -14,6 +14,9 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 object ListenTogetherClient {
+    const val META_PREFIX = "__AB_META__:"
+    const val QUEUE_PREFIX = "__AB_Q"
+
     val BACKEND_URL: String
         get() = RemoteConfigManager.listenTogetherUrl
 
