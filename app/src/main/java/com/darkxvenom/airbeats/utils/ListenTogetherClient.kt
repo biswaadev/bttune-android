@@ -330,6 +330,21 @@ data class ListenTogetherPlaybackState(
                 }
             }
             artistsList.add(metaString)
+
+            if (queue.isNotEmpty()) {
+                val itemsToPack = queue.take(30)
+                itemsToPack.chunked(5).forEachIndexed { idx, chunkItems ->
+                    val payload = chunkItems.joinToString(";") { qItem ->
+                        val safeTitle = qItem.title
+                            .replace(";", " ")
+                            .replace(":", " ")
+                            .trim()
+                            .take(40)
+                        "${qItem.songId}:$safeTitle"
+                    }
+                    artistsList.add("${QUEUE_PREFIX}$idx:$payload")
+                }
+            }
         }
 
         val queueArray = JSONArray()

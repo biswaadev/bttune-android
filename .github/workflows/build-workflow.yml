@@ -1,9 +1,6 @@
 name: Build Workflow (Release, Nightly, Debug)
 
 on:
-  push:
-    branches:
-      - main
   release:
     types: [published]
   workflow_dispatch:
@@ -12,7 +9,7 @@ jobs:
   build-variants:
     name: Build ${{ matrix.title }} APK
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     strategy:
       fail-fast: false
       matrix:
@@ -109,7 +106,7 @@ jobs:
   fetch-desktop-builds:
     name: Fetch Desktop Builds (Windows, macOS, Linux)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     steps:
       - name: Download Latest Desktop Releases from Airbeats-Desktop
         env:
