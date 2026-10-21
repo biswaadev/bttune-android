@@ -14,6 +14,9 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 object ListenTogetherClient {
+    const val META_PREFIX = "__AB_META__:"
+    const val QUEUE_PREFIX = "__AB_Q"
+
     val BACKEND_URL: String
         get() = RemoteConfigManager.listenTogetherUrl
 
@@ -32,7 +35,7 @@ object ListenTogetherClient {
             "$BACKEND_URL/sessions",
             JSONObject()
                 .put("name", displayName)
-                .put("state", state.toJson())
+                .put("state", state.toJson(forOnlineWorker = true))
                 .put("settings", state.settings.toJson())
         ) { body ->
             ListenTogetherSession.fromJson(body)
@@ -63,7 +66,7 @@ object ListenTogetherClient {
             "$BACKEND_URL/sessions/${code.trim().uppercase()}/state",
             JSONObject()
                 .put("participantId", participantId)
-                .put("state", state.toJson())
+                .put("state", state.toJson(forOnlineWorker = true))
                 .put("settings", state.settings.toJson())
         ) { body ->
             ListenTogetherSession.fromJson(body)
@@ -209,7 +212,7 @@ data class ListenTogetherSession(
             .put("controllerName", controllerName)
             .put("stateVersion", stateVersion)
             .put("serverNow", serverNow)
-            .put("state", state?.toJson())
+            .put("state", state?.toJson(forOnlineWorker = false))
             .put("settings", settings.toJson())
             .put("queue", queueArr)
     }
@@ -300,58 +303,33 @@ data class ListenTogetherPlaybackState(
             thumbnailUrl = thumbnailUrl,
         )
 
-    fun toJson(): JSONObject {
-        val metaString = buildString {
-            append(META_PREFIX)
-            append("pb=").append(if (settings.allowGuestsToControlPlayback) "1" else "0")
-            append("&tr=").append(if (settings.allowGuestsToAddTracks) "1" else "0")
-            if (!actionCommand.isNullOrBlank()) {
-                append("&cmd=").append(java.net.URLEncoder.encode(actionCommand, "UTF-8"))
-            }
-            if (!actionPayload.isNullOrBlank()) {
-                append("&pl=").append(java.net.URLEncoder.encode(actionPayload, "UTF-8"))
-            }
-            if (!actionId.isNullOrBlank()) {
-                append("&actId=").append(java.net.URLEncoder.encode(actionId, "UTF-8"))
-            }
-            if (durationMs > 0L) {
-                append("&dur=").append(durationMs)
-            }
-            if (totalQueueSize > 0) {
-                append("&qSize=").append(totalQueueSize)
-            }
-        }
-        val cleanArtists = artists.filterNot { it.startsWith(META_PREFIX) || it.startsWith(QUEUE_PREFIX) }.take(1).toMutableList()
+    fun toJson(forOnlineWorker: Boolean = false): JSONObject {
+        val cleanArtists = artists.filterNot { it.startsWith(META_PREFIX) || it.startsWith(QUEUE_PREFIX) }
         val artistsList = mutableListOf<String>()
         cleanArtists.forEach { artistsList.add(it) }
-        artistsList.add(metaString)
 
-        // Tunnel shared queue through available slots in artists (worker allows up to 8 slots, 120 chars each)
-        if (queue.isNotEmpty()) {
-            val maxSlots = (8 - artistsList.size).coerceAtLeast(0)
-            var currentSlotIndex = 0
-            var currentBuffer = StringBuilder()
-
-            for (item in queue) {
-                if (currentSlotIndex >= maxSlots) break
-                val safeTitle = item.title.replace(":", " ").replace(";", " ").trim().take(22)
-                val entry = "${item.songId}:$safeTitle"
-                val prefix = "$QUEUE_PREFIX$currentSlotIndex:"
-                val testLength = prefix.length + (if (currentBuffer.isEmpty()) 0 else currentBuffer.length + 1) + entry.length
-                if (testLength > 118) {
-                    if (currentBuffer.isNotEmpty()) {
-                        artistsList.add("$prefix$currentBuffer")
-                        currentSlotIndex++
-                        currentBuffer = StringBuilder()
-                    }
-                    if (currentSlotIndex >= maxSlots) break
+        if (forOnlineWorker) {
+            val metaString = buildString {
+                append(META_PREFIX)
+                append("pb=").append(if (settings.allowGuestsToControlPlayback) "1" else "0")
+                append("&tr=").append(if (settings.allowGuestsToAddTracks) "1" else "0")
+                if (!actionCommand.isNullOrBlank()) {
+                    append("&cmd=").append(java.net.URLEncoder.encode(actionCommand, "UTF-8"))
                 }
-                if (currentBuffer.isNotEmpty()) currentBuffer.append(";")
-                currentBuffer.append(entry)
+                if (!actionPayload.isNullOrBlank()) {
+                    append("&pl=").append(java.net.URLEncoder.encode(actionPayload, "UTF-8"))
+                }
+                if (!actionId.isNullOrBlank()) {
+                    append("&actId=").append(java.net.URLEncoder.encode(actionId, "UTF-8"))
+                }
+                if (durationMs > 0L) {
+                    append("&dur=").append(durationMs)
+                }
+                if (totalQueueSize > 0) {
+                    append("&qSize=").append(totalQueueSize)
+                }
             }
-            if (currentBuffer.isNotEmpty() && currentSlotIndex < maxSlots) {
-                artistsList.add("$QUEUE_PREFIX$currentSlotIndex:$currentBuffer")
-            }
+            artistsList.add(metaString)
         }
 
         val queueArray = JSONArray()
@@ -471,4 +449,3 @@ data class ListenTogetherPlaybackState(
         }
     }
 }
-

@@ -209,7 +209,6 @@ class PlayerConnection(
         Log.d(TAG, "PlayerConnection initialized successfully")
     }
 
-
     private fun initializeStates() {
         try {
             _playbackState.value = player.playbackState
@@ -239,12 +238,10 @@ class PlayerConnection(
         }
     }
 
-
     fun refreshLikeStatus() {
         updateScope.launch(Dispatchers.IO) {
             updateLikeStatusForCurrentSong()
         }
-
     }
 
     private fun handlePlayerEvents(player: Player, events: Player.Events) {
@@ -332,7 +329,6 @@ class PlayerConnection(
             if (kotlin.math.abs(currentPos - lastPosition) > 500L ||
                 _duration.value != totalDuration
             ) {
-
                 _currentPosition.value = currentPos
                 _duration.value = totalDuration
                 _bufferedPosition.value = buffered
@@ -358,7 +354,6 @@ class PlayerConnection(
 
         widgetUpdateHandler.postDelayed(pendingWidgetUpdate!!, WIDGET_UPDATE_DEBOUNCE)
     }
-
 
     fun clearError() {
         _error.value = null
@@ -509,6 +504,36 @@ class PlayerConnection(
 
     fun removeQueueItem(index: Int, songId: String? = null) {
         try {
+            if (!songId.isNullOrBlank()) {
+                ListenTogetherSync.removeLocalSharedQueueItem(index, songId)
+            }
+
+            val targetInTimeline = if (!songId.isNullOrBlank()) {
+                val cur = player.currentMediaItemIndex
+                var match = -1
+                if (cur >= 0 && cur + 1 + index < player.mediaItemCount && player.getMediaItemAt(cur + 1 + index).mediaId == songId) {
+                    cur + 1 + index
+                } else {
+                    for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
+                        if (player.getMediaItemAt(i).mediaId == songId) {
+                            match = i
+                            break
+                        }
+                    }
+                    if (match < 0) {
+                        for (i in 0 until player.mediaItemCount) {
+                            if (player.getMediaItemAt(i).mediaId == songId) {
+                                match = i
+                                break
+                            }
+                        }
+                    }
+                }
+                match
+            } else {
+                if (index in 0 until player.mediaItemCount) index else -1
+            }
+
             if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
                 val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToAddTracks == true ||
                     ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
@@ -521,13 +546,17 @@ class PlayerConnection(
                     if (!songId.isNullOrBlank()) put("songId", songId)
                 }
                 ListenTogetherSync.sendGuestAction("remove_track", extraData = data)
-                if (index in 0 until player.mediaItemCount) {
-                    player.removeMediaItem(index)
+                if (targetInTimeline >= 0) {
+                    player.removeMediaItem(targetInTimeline)
                 }
                 return
             }
-            if (index in 0 until player.mediaItemCount) {
-                player.removeMediaItem(index)
+
+            if (targetInTimeline >= 0) {
+                player.removeMediaItem(targetInTimeline)
+                if (ListenTogetherSync.session.value != null && ListenTogetherSync.isHost.value) {
+                    ListenTogetherSync.publishNow()
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error removing queue item at index: $index", e)
@@ -537,6 +566,32 @@ class PlayerConnection(
 
     fun playQueueIndex(index: Int, songId: String? = null) {
         try {
+            val targetInTimeline = if (!songId.isNullOrBlank()) {
+                val cur = player.currentMediaItemIndex
+                var match = -1
+                if (cur >= 0 && cur + 1 + index < player.mediaItemCount && player.getMediaItemAt(cur + 1 + index).mediaId == songId) {
+                    cur + 1 + index
+                } else {
+                    for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
+                        if (player.getMediaItemAt(i).mediaId == songId) {
+                            match = i
+                            break
+                        }
+                    }
+                    if (match < 0) {
+                        for (i in 0 until player.mediaItemCount) {
+                            if (player.getMediaItemAt(i).mediaId == songId) {
+                                match = i
+                                break
+                            }
+                        }
+                    }
+                }
+                match
+            } else {
+                if (index in 0 until player.mediaItemCount) index else -1
+            }
+
             if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
                 val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
                 if (!allowed) {
@@ -548,15 +603,19 @@ class PlayerConnection(
                     if (!songId.isNullOrBlank()) put("songId", songId)
                 }
                 ListenTogetherSync.sendGuestAction("play_index", extraData = data)
-                if (index in 0 until player.mediaItemCount) {
-                    player.seekToDefaultPosition(index)
+                if (targetInTimeline >= 0) {
+                    player.seekToDefaultPosition(targetInTimeline)
                     player.play()
                 }
                 return
             }
-            if (index in 0 until player.mediaItemCount) {
-                player.seekToDefaultPosition(index)
+
+            if (targetInTimeline >= 0) {
+                player.seekToDefaultPosition(targetInTimeline)
                 player.play()
+                if (ListenTogetherSync.session.value != null && ListenTogetherSync.isHost.value) {
+                    ListenTogetherSync.publishNow()
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error playing queue item at index: $index", e)
@@ -564,8 +623,14 @@ class PlayerConnection(
         }
     }
 
-    fun moveQueueItem(from: Int, to: Int) {
+    fun moveQueueItem(from: Int, to: Int, songId: String? = null) {
         try {
+            ListenTogetherSync.moveLocalSharedQueueItem(from, to)
+
+            val cur = player.currentMediaItemIndex
+            val realFrom = if (cur >= 0 && cur + 1 + from < player.mediaItemCount) cur + 1 + from else from
+            val realTo = if (cur >= 0 && cur + 1 + to < player.mediaItemCount) cur + 1 + to else to
+
             if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
                 val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToAddTracks == true ||
                     ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
@@ -573,15 +638,23 @@ class PlayerConnection(
                     ListenTogetherSync.notifyDisallowedAction("Reordering queue is disabled by the host")
                     return
                 }
-                val data = org.json.JSONObject().put("from", from).put("to", to)
+                val data = org.json.JSONObject().apply {
+                    put("from", from)
+                    put("to", to)
+                    if (!songId.isNullOrBlank()) put("songId", songId)
+                }
                 ListenTogetherSync.sendGuestAction("move_track", extraData = data)
-                if (from in 0 until player.mediaItemCount && to in 0 until player.mediaItemCount) {
-                    player.moveMediaItem(from, to)
+                if (realFrom in 0 until player.mediaItemCount && realTo in 0 until player.mediaItemCount && realFrom != realTo) {
+                    player.moveMediaItem(realFrom, realTo)
                 }
                 return
             }
-            if (from in 0 until player.mediaItemCount && to in 0 until player.mediaItemCount) {
-                player.moveMediaItem(from, to)
+
+            if (realFrom in 0 until player.mediaItemCount && realTo in 0 until player.mediaItemCount && realFrom != realTo) {
+                player.moveMediaItem(realFrom, realTo)
+                if (ListenTogetherSync.session.value != null && ListenTogetherSync.isHost.value) {
+                    ListenTogetherSync.publishNow()
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error moving queue item from $from to $to", e)
@@ -608,7 +681,6 @@ class PlayerConnection(
             reportException(e)
         }
     }
-
 
     fun isCurrentSongLiked(): Boolean {
         return _isLiked.value
@@ -765,29 +837,32 @@ class PlayerConnection(
 
     fun seekTo(positionMs: Long) {
         try {
+            val safeDuration = player.duration.coerceAtLeast(0L)
+            val targetPosition = if (safeDuration > 0L) positionMs.coerceIn(0L, safeDuration) else positionMs.coerceAtLeast(0L)
+
             if (ListenTogetherSync.session.value != null && !ListenTogetherSync.isHost.value) {
                 val allowed = ListenTogetherSync.session.value?.settings?.allowGuestsToControlPlayback == true
                 if (!allowed) {
                     ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
                     return
                 }
-                val safeDuration = player.duration.coerceAtLeast(0L)
-                val targetPosition = if (safeDuration > 0L) positionMs.coerceIn(0L, safeDuration) else positionMs.coerceAtLeast(0L)
                 player.seekTo(targetPosition)
                 _currentPosition.value = targetPosition
                 ListenTogetherSync.sendGuestAction("seek", targetPosition)
                 return
             }
+
             Log.d(TAG, "Seeking to position: ${positionMs}ms")
             if (service.isCasting.value) {
                 service.seekCastTo(positionMs)
                 _currentPosition.value = positionMs
                 return
             }
-            val safeDuration = player.duration.coerceAtLeast(0L)
-            val targetPosition = if (safeDuration > 0L) positionMs.coerceIn(0L, safeDuration) else positionMs.coerceAtLeast(0L)
             player.seekTo(targetPosition)
             _currentPosition.value = targetPosition
+            if (ListenTogetherSync.session.value != null && ListenTogetherSync.isHost.value) {
+                ListenTogetherSync.publishNow()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error seeking to position", e)
             reportException(e)
@@ -871,14 +946,40 @@ class PlayerConnection(
             updateCanSkipPreviousAndNext()
             scheduleWidgetUpdate()
         }
+
+        if (ListenTogetherSync.session.value != null) {
+            if (ListenTogetherSync.isHost.value) {
+                ListenTogetherSync.publishNow()
+            } else {
+                ListenTogetherSync.onMediaItemTransitioned(mediaItem?.mediaId)
+            }
+        }
+    }
+
+    override fun onPositionDiscontinuity(
+        oldPosition: Player.PositionInfo,
+        newPosition: Player.PositionInfo,
+        reason: Int,
+    ) {
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+            val session = ListenTogetherSync.session.value
+            if (session != null) {
+                if (ListenTogetherSync.isHost.value) {
+                    ListenTogetherSync.publishNow()
+                } else {
+                    val allowed = session.settings.allowGuestsToControlPlayback
+                    if (allowed) {
+                        ListenTogetherSync.sendGuestAction("seek", newPosition.positionMs)
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun updateLikeStatusForCurrentSong() {
         try {
             val currentSongId = withContext(Dispatchers.Main) { player.currentMediaItem?.mediaId }
             if (currentSongId != null) {
-                // Consultar la base de datos para obtener el estado actual del like
-                // Similar a como lo hace Player.kt con currentSong?.song?.liked
                 val songWithInfo = database.song(currentSongId).first()
                 _isLiked.value = songWithInfo?.song?.liked ?: false
                 Timber.tag(TAG).d("Like status updated for song $currentSongId: ${_isLiked.value}")
@@ -891,6 +992,7 @@ class PlayerConnection(
             _isLiked.value = false
         }
     }
+
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         Log.d(TAG, "Timeline changed (reason: $reason)")
         _queueWindows.value = player.getQueueWindows()

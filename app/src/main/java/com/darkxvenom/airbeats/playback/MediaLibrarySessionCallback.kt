@@ -16,6 +16,7 @@ import androidx.annotation.DrawableRes
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -136,6 +137,57 @@ constructor(
             MediaSessionConstants.ACTION_TOGGLE_REPEAT_MODE -> session.player.toggleRepeatMode()
         }
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
+
+    override fun onPlayerCommandRequest(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        @Player.Command playerCommand: Int,
+    ): Int {
+        val syncSession = com.darkxvenom.airbeats.utils.ListenTogetherSync.session.value
+        val isHost = com.darkxvenom.airbeats.utils.ListenTogetherSync.isHost.value
+        if (syncSession != null && !isHost) {
+            val allowPlayback = syncSession.settings.allowGuestsToControlPlayback
+            when (playerCommand) {
+                Player.COMMAND_SEEK_TO_NEXT,
+                Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> {
+                    if (!allowPlayback) {
+                        com.darkxvenom.airbeats.utils.ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                        return SessionResult.RESULT_ERROR_PERMISSION_DENIED
+                    }
+                    com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_next")
+                    com.darkxvenom.airbeats.playback.PlayerConnection.instance?.seekToNext()
+                    return SessionResult.RESULT_SUCCESS
+                }
+                Player.COMMAND_SEEK_TO_PREVIOUS,
+                Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
+                    if (!allowPlayback) {
+                        com.darkxvenom.airbeats.utils.ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                        return SessionResult.RESULT_ERROR_PERMISSION_DENIED
+                    }
+                    com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("skip_previous")
+                    com.darkxvenom.airbeats.playback.PlayerConnection.instance?.seekToPrevious()
+                    return SessionResult.RESULT_SUCCESS
+                }
+                Player.COMMAND_PLAY_PAUSE -> {
+                    if (!allowPlayback) {
+                        com.darkxvenom.airbeats.utils.ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                        return SessionResult.RESULT_ERROR_PERMISSION_DENIED
+                    }
+                    com.darkxvenom.airbeats.utils.ListenTogetherSync.sendGuestAction("toggle_play_pause")
+                    com.darkxvenom.airbeats.playback.PlayerConnection.instance?.togglePlayPause()
+                    return SessionResult.RESULT_SUCCESS
+                }
+                Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+                Player.COMMAND_SEEK_TO_MEDIA_ITEM -> {
+                    if (!allowPlayback) {
+                        com.darkxvenom.airbeats.utils.ListenTogetherSync.notifyDisallowedAction("Playback controls are disabled by the host")
+                        return SessionResult.RESULT_ERROR_PERMISSION_DENIED
+                    }
+                }
+            }
+        }
+        return super.onPlayerCommandRequest(session, controller, playerCommand)
     }
 
     override fun onGetLibraryRoot(

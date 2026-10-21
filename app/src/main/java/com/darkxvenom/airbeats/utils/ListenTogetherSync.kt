@@ -160,6 +160,7 @@ object ListenTogetherSync {
         appContext = context.applicationContext
         lastAppliedVersion = session.stateVersion
         loadingSongId = null
+        lastSongLoadAttempt = 0L
         ListenTogetherStore.save(
             context = context.applicationContext,
             session = session,
@@ -218,6 +219,8 @@ object ListenTogetherSync {
                 _isHost.value = false
                 _connectionMode.value = ListenTogetherConnectionMode.ONLINE
                 lastAppliedVersion = 0L
+                loadingSongId = null
+                lastSongLoadAttempt = 0L
                 ListenTogetherStore.save(context, it, _displayName.value, false, isLan = false)
                 setDisplayMessage("Joined session")
                 restartSync()
@@ -271,7 +274,8 @@ object ListenTogetherSync {
                             if (!player.currentTimeline.isEmpty) {
                                 val count = player.mediaItemCount
                                 val currentIndex = player.currentMediaItemIndex
-                                for (i in 0 until count) {
+                                val start = (currentIndex + 1).coerceAtLeast(0)
+                                for (i in start until count) {
                                     val item = player.getMediaItemAt(i)
                                     val meta = item.mediaMetadata
                                     val t = meta.title?.toString() ?: "Unknown Song"
@@ -279,7 +283,7 @@ object ListenTogetherSync {
                                     val thumb = meta.artworkUri?.toString()
                                     currentQueue.add(ListenTogetherQueueItem(songId = item.mediaId, title = t, artist = a, thumbnailUrl = thumb))
                                     list.add(JSONObject().apply {
-                                        put("index", i)
+                                        put("index", i - start)
                                         put("id", item.mediaId)
                                         put("title", t)
                                         put("artist", a)
@@ -324,17 +328,30 @@ object ListenTogetherSync {
                             "play_index", "jump_to" -> {
                                 val targetIndex = extraData?.optInt("index", -1) ?: -1
                                 val targetSongId = extraData?.optString("songId")
-                                if (targetIndex >= 0 && targetIndex < player.mediaItemCount) {
-                                    player.seekToDefaultPosition(targetIndex)
-                                    player.play()
-                                } else if (!targetSongId.isNullOrBlank()) {
-                                    for (i in 0 until player.mediaItemCount) {
+                                var match = -1
+                                val cur = player.currentMediaItemIndex
+                                if (!targetSongId.isNullOrBlank()) {
+                                    for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
                                         if (player.getMediaItemAt(i).mediaId == targetSongId) {
-                                            player.seekToDefaultPosition(i)
-                                            player.play()
+                                            match = i
                                             break
                                         }
                                     }
+                                    if (match < 0) {
+                                        for (i in 0 until player.mediaItemCount) {
+                                            if (player.getMediaItemAt(i).mediaId == targetSongId) {
+                                                match = i
+                                                break
+                                            }
+                                        }
+                                    }
+                                } else if (targetIndex >= 0) {
+                                    val upcomingIdx = cur + 1 + targetIndex
+                                    match = if (upcomingIdx in 0 until player.mediaItemCount) upcomingIdx else targetIndex
+                                }
+                                if (match in 0 until player.mediaItemCount) {
+                                    player.seekToDefaultPosition(match)
+                                    player.play()
                                 }
                             }
                             "play_song" -> {
@@ -373,20 +390,45 @@ object ListenTogetherSync {
                             "remove_track", "remove_song" -> {
                                 val targetIndex = extraData?.optInt("index", -1) ?: -1
                                 val targetSongId = extraData?.optString("songId")
-                                if (targetIndex >= 0 && targetIndex < player.mediaItemCount) {
-                                    player.removeMediaItem(targetIndex)
-                                } else if (!targetSongId.isNullOrBlank()) {
-                                    connection.removeSongFromQueue(targetSongId)
+                                var match = -1
+                                val cur = player.currentMediaItemIndex
+                                if (!targetSongId.isNullOrBlank()) {
+                                    for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
+                                        if (player.getMediaItemAt(i).mediaId == targetSongId) {
+                                            match = i
+                                            break
+                                        }
+                                    }
+                                    if (match < 0) {
+                                        for (i in 0 until player.mediaItemCount) {
+                                            if (player.getMediaItemAt(i).mediaId == targetSongId) {
+                                                match = i
+                                                break
+                                            }
+                                        }
+                                    }
+                                } else if (targetIndex >= 0) {
+                                    val upcomingIdx = cur + 1 + targetIndex
+                                    match = if (upcomingIdx in 0 until player.mediaItemCount) upcomingIdx else targetIndex
+                                }
+                                if (match in 0 until player.mediaItemCount) {
+                                    player.removeMediaItem(match)
                                 }
                             }
                             "move_track" -> {
                                 val from = extraData?.optInt("from", -1) ?: -1
                                 val to = extraData?.optInt("to", -1) ?: -1
-                                if (from >= 0 && to >= 0 && from < player.mediaItemCount && to < player.mediaItemCount) {
+                                val cur = player.currentMediaItemIndex
+                                val fromTimeline = cur + 1 + from
+                                val toTimeline = cur + 1 + to
+                                if (fromTimeline in 0 until player.mediaItemCount && toTimeline in 0 until player.mediaItemCount) {
+                                    player.moveMediaItem(fromTimeline, toTimeline)
+                                } else if (from in 0 until player.mediaItemCount && to in 0 until player.mediaItemCount) {
                                     player.moveMediaItem(from, to)
                                 }
                             }
                         }
+                        server.stateVersion++
                     }
                 }
                 server.start(30000, true)
@@ -428,6 +470,8 @@ object ListenTogetherSync {
                 _session.value = newSession
                 _isHost.value = false
                 lastAppliedVersion = 0L
+                loadingSongId = null
+                lastSongLoadAttempt = 0L
                 ListenTogetherStore.save(
                     context = context,
                     session = newSession,
@@ -468,6 +512,7 @@ object ListenTogetherSync {
             lanServer = null
             lanHostAddress = null
             loadingSongId = null
+            lastSongLoadAttempt = 0L
             playerConnection?.player?.let { player ->
                 if (player.playbackParameters.speed != 1.0f) {
                     player.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
@@ -595,13 +640,17 @@ object ListenTogetherSync {
                 if (now > suppressLocalSyncUntil) {
                     if (isWrongSong || isNewVersion) {
                         applyRemoteState(connection, remoteSession)
-                        lastAppliedVersion = remoteSession.stateVersion
+                        if (currentSongId == remoteState.songId) {
+                            lastAppliedVersion = remoteSession.stateVersion
+                        }
                         return@onSuccess
                     }
                     softCorrectPosition(connection, remoteSession)
-                } else if (isNewVersion) {
+                } else if (isWrongSong || isNewVersion) {
                     applyRemoteState(connection, remoteSession)
-                    lastAppliedVersion = remoteSession.stateVersion
+                    if (currentSongId == remoteState.songId) {
+                        lastAppliedVersion = remoteSession.stateVersion
+                    }
                     return@onSuccess
                 }
             }.onFailure {
@@ -665,17 +714,30 @@ object ListenTogetherSync {
                                 "play_index", "jump_to" -> {
                                     val targetIndex = json?.optInt("index", -1) ?: -1
                                     val targetSongId = json?.optString("songId")
-                                    if (targetIndex >= 0 && targetIndex < player.mediaItemCount) {
-                                        player.seekToDefaultPosition(targetIndex)
-                                        player.play()
-                                    } else if (!targetSongId.isNullOrBlank()) {
-                                        for (i in 0 until player.mediaItemCount) {
+                                    var match = -1
+                                    val cur = player.currentMediaItemIndex
+                                    if (!targetSongId.isNullOrBlank()) {
+                                        for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
                                             if (player.getMediaItemAt(i).mediaId == targetSongId) {
-                                                player.seekToDefaultPosition(i)
-                                                player.play()
+                                                match = i
                                                 break
                                             }
                                         }
+                                        if (match < 0) {
+                                            for (i in 0 until player.mediaItemCount) {
+                                                if (player.getMediaItemAt(i).mediaId == targetSongId) {
+                                                    match = i
+                                                    break
+                                                }
+                                            }
+                                        }
+                                    } else if (targetIndex >= 0) {
+                                        val upcomingIdx = cur + 1 + targetIndex
+                                        match = if (upcomingIdx in 0 until player.mediaItemCount) upcomingIdx else targetIndex
+                                    }
+                                    if (match in 0 until player.mediaItemCount) {
+                                        player.seekToDefaultPosition(match)
+                                        player.play()
                                     }
                                 }
                                 "play_song" -> {
@@ -737,16 +799,40 @@ object ListenTogetherSync {
                                 "remove_track", "remove_song" -> {
                                     val targetIndex = json?.optInt("index", -1) ?: -1
                                     val targetSongId = json?.optString("songId")
-                                    if (targetIndex >= 0 && targetIndex < player.mediaItemCount) {
-                                        player.removeMediaItem(targetIndex)
-                                    } else if (!targetSongId.isNullOrBlank()) {
-                                        connection.removeSongFromQueue(targetSongId)
+                                    var match = -1
+                                    val cur = player.currentMediaItemIndex
+                                    if (!targetSongId.isNullOrBlank()) {
+                                        for (i in (cur + 1).coerceAtLeast(0) until player.mediaItemCount) {
+                                            if (player.getMediaItemAt(i).mediaId == targetSongId) {
+                                                match = i
+                                                break
+                                            }
+                                        }
+                                        if (match < 0) {
+                                            for (i in 0 until player.mediaItemCount) {
+                                                if (player.getMediaItemAt(i).mediaId == targetSongId) {
+                                                    match = i
+                                                    break
+                                                }
+                                            }
+                                        }
+                                    } else if (targetIndex >= 0) {
+                                        val upcomingIdx = cur + 1 + targetIndex
+                                        match = if (upcomingIdx in 0 until player.mediaItemCount) upcomingIdx else targetIndex
+                                    }
+                                    if (match in 0 until player.mediaItemCount) {
+                                        player.removeMediaItem(match)
                                     }
                                 }
                                 "move_track" -> {
                                     val from = json?.optInt("from", -1) ?: -1
                                     val to = json?.optInt("to", -1) ?: -1
-                                    if (from >= 0 && to >= 0 && from < player.mediaItemCount && to < player.mediaItemCount) {
+                                    val cur = player.currentMediaItemIndex
+                                    val fromTimeline = cur + 1 + from
+                                    val toTimeline = cur + 1 + to
+                                    if (fromTimeline in 0 until player.mediaItemCount && toTimeline in 0 until player.mediaItemCount) {
+                                        player.moveMediaItem(fromTimeline, toTimeline)
+                                    } else if (from in 0 until player.mediaItemCount && to in 0 until player.mediaItemCount) {
                                         player.moveMediaItem(from, to)
                                     }
                                 }
@@ -771,13 +857,17 @@ object ListenTogetherSync {
             if (now > suppressLocalSyncUntil) {
                 if (isWrongSong || isNewVersion) {
                     applyRemoteState(connection, remoteSession)
-                    lastAppliedVersion = remoteSession.stateVersion
+                    if (currentSongId == remoteState.songId) {
+                        lastAppliedVersion = remoteSession.stateVersion
+                    }
                     return@onSuccess
                 }
                 softCorrectPosition(connection, remoteSession)
-            } else if (isNewVersion) {
+            } else if (isWrongSong || isNewVersion) {
                 applyRemoteState(connection, remoteSession)
-                lastAppliedVersion = remoteSession.stateVersion
+                if (currentSongId == remoteState.songId) {
+                    lastAppliedVersion = remoteSession.stateVersion
+                }
                 return@onSuccess
             }
         }.onFailure {
@@ -844,6 +934,50 @@ object ListenTogetherSync {
         }
     }
 
+    fun publishNow() {
+        val connection = playerConnection ?: return
+        val session = _session.value ?: return
+        if (_isHost.value) {
+            scope.launch {
+                if (_connectionMode.value == ListenTogetherConnectionMode.ONLINE) {
+                    publishLocalStateOnline(connection, session)
+                } else {
+                    syncOnceLan(connection, session)
+                }
+            }
+        }
+    }
+
+    fun onMediaItemTransitioned(newSongId: String? = null) {
+        loadingSongId = null
+        lastSongLoadAttempt = 0L
+    }
+
+    fun removeLocalSharedQueueItem(index: Int, songId: String? = null) {
+        val current = _sharedQueue.value.toMutableList()
+        if (!songId.isNullOrBlank()) {
+            val idx = current.indexOfFirst { it.songId == songId }
+            if (idx >= 0) {
+                current.removeAt(idx)
+                _sharedQueue.value = current
+                return
+            }
+        }
+        if (index in 0 until current.size) {
+            current.removeAt(index)
+            _sharedQueue.value = current
+        }
+    }
+
+    fun moveLocalSharedQueueItem(from: Int, to: Int) {
+        val current = _sharedQueue.value.toMutableList()
+        if (from in 0 until current.size && to in 0 until current.size && from != to) {
+            val item = current.removeAt(from)
+            current.add(to, item)
+            _sharedQueue.value = current
+        }
+    }
+
     private suspend fun applyRemoteState(
         connection: PlayerConnection,
         remoteSession: ListenTogetherSession,
@@ -857,12 +991,15 @@ object ListenTogetherSync {
 
         val player = connection.player
         val currentSongId = player.currentMediaItem?.mediaId
+        val now = System.currentTimeMillis()
 
         if (remoteState.songId.isNotBlank()) {
             if (currentSongId != remoteState.songId) {
-                if (loadingSongId != remoteState.songId) {
+                val isStaleLoad = (now - lastSongLoadAttempt) > 4000L
+                if (loadingSongId != remoteState.songId || isStaleLoad) {
                     loadingSongId = remoteState.songId
-                    suppressLocalSyncUntil = System.currentTimeMillis() + APPLY_GRACE_MS
+                    lastSongLoadAttempt = now
+                    suppressLocalSyncUntil = now + APPLY_GRACE_MS
 
                     withContext(Dispatchers.Main) {
                         var foundIndex = -1
@@ -964,6 +1101,11 @@ object ListenTogetherSync {
         connection: PlayerConnection,
         remoteSession: ListenTogetherSession,
     ) {
+        val now = System.currentTimeMillis()
+        if (now < suppressLocalSyncUntil) {
+            return
+        }
+
         val player = connection.player
         val remoteState = remoteSession.state ?: return
         val currentSongId = player.currentMediaItem?.mediaId
@@ -1118,10 +1260,11 @@ object ListenTogetherSync {
                 "next", "skip_next" -> connection.seekToNext()
                 "previous", "skip_previous" -> connection.seekToPrevious()
             }
+            publishNow()
             return true
         }
 
-        suppressLocalSyncUntil = System.currentTimeMillis() + 650L
+        suppressLocalSyncUntil = System.currentTimeMillis() + 3000L
 
         scope.launch {
             runCatching {
@@ -1168,7 +1311,7 @@ object ListenTogetherSync {
                     state = updatedSession.state?.copy(settings = preservedSettings) ?: updatedSession.state
                 )
                 lastAppliedVersion = updatedSession.stateVersion
-                suppressLocalSyncUntil = System.currentTimeMillis() + 650L
+                suppressLocalSyncUntil = System.currentTimeMillis() + 3000L
                 playerConnection?.let { conn ->
                     scope.launch {
                         delay(100L)
@@ -1186,4 +1329,3 @@ object ListenTogetherSync {
         setDisplayMessage(notice)
     }
 }
-

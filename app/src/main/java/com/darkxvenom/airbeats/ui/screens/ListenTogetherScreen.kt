@@ -16,6 +16,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,6 +86,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -96,8 +99,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -119,6 +124,7 @@ import com.darkxvenom.airbeats.utils.ListenTogetherSession
 import com.darkxvenom.airbeats.utils.ListenTogetherStore
 import com.darkxvenom.airbeats.utils.ListenTogetherSync
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private object MusicTogetherSpacing {
     val xxs = 4.dp
@@ -486,7 +492,8 @@ fun ListenTogetherScreen(
                         }
                     )
 
-                    SharedQueueCard(
+                    // Shared queue screen removed per user request: normal player queue is used
+                    if (false) SharedQueueCard(
                         queue = sharedQueue,
                         canManageQueue = isHost || syncedIsHost || currentRoomSession.settings.allowGuestsToAddTracks || currentRoomSession.settings.allowGuestsToControlPlayback,
                         canPlay = isHost || syncedIsHost || currentRoomSession.settings.allowGuestsToControlPlayback,
@@ -495,6 +502,9 @@ fun ListenTogetherScreen(
                         },
                         onRemoveItem = { index, songId ->
                             playerConnection?.removeQueueItem(index, songId)
+                        },
+                        onMoveItem = { from, to ->
+                            playerConnection?.moveQueueItem(from, to)
                         }
                     )
                 }
@@ -1454,12 +1464,24 @@ private fun SharedQueueCard(
     canPlay: Boolean,
     onPlayItem: (index: Int, songId: String) -> Unit,
     onRemoveItem: (index: Int, songId: String) -> Unit,
+    onMoveItem: (from: Int, to: Int) -> Unit,
 ) {
+    var isExpanded by rememberSaveable { mutableStateOf(true) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+
     SectionCard(
         iconResId = R.drawable.queue_music,
         titleResId = R.string.together_shared_queue,
-        subtitle = "${queue.size} upcoming",
+        subtitle = if (queue.isEmpty()) {
+            stringResource(R.string.together_queue_empty)
+        } else {
+            "${queue.size} upcoming • ${if (isExpanded) "Tap to collapse" else "Tap to expand"}"
+        },
         accent = MaterialTheme.colorScheme.primary,
+        isCollapsible = true,
+        isExpanded = isExpanded,
+        onHeaderClick = { isExpanded = !isExpanded },
     ) {
         if (queue.isEmpty()) {
             EmptyPanel(
@@ -1472,7 +1494,18 @@ private fun SharedQueueCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                queue.take(20).forEachIndexed { idx, item ->
+                if (canManageQueue && queue.size > 1) {
+                    Text(
+                        text = "Hold & drag handle or use arrows to reorder upcoming songs",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
+
+                queue.take(25).forEachIndexed { idx, item ->
+                    val isItemDragging = draggingIndex == idx
+
                     ListItem(
                         headlineContent = {
                             Text(
@@ -1493,21 +1526,41 @@ private fun SharedQueueCard(
                             }
                         } else null,
                         leadingContent = {
-                            AsyncImage(
-                                model = item.thumbnailUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(6.dp),
+                                ) {
+                                    Text(
+                                        text = "#${idx + 1}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                    )
+                                }
+                                AsyncImage(
+                                    model = item.thumbnailUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                )
+                            }
                         },
                         trailingContent = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
                                 if (canPlay) {
                                     IconButton(
-                                        onClick = { onPlayItem(idx + 1, item.songId) },
-                                        modifier = Modifier.size(36.dp),
+                                        onClick = { onPlayItem(idx, item.songId) },
+                                        modifier = Modifier.size(34.dp),
                                     ) {
                                         Icon(
                                             painter = painterResource(R.drawable.play),
@@ -1518,9 +1571,35 @@ private fun SharedQueueCard(
                                     }
                                 }
                                 if (canManageQueue) {
+                                    if (idx > 0) {
+                                        IconButton(
+                                            onClick = { onMoveItem(idx, idx - 1) },
+                                            modifier = Modifier.size(30.dp),
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.arrow_upward),
+                                                contentDescription = "Move Up",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                    if (idx < queue.size - 1) {
+                                        IconButton(
+                                            onClick = { onMoveItem(idx, idx + 1) },
+                                            modifier = Modifier.size(30.dp),
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.arrow_downward),
+                                                contentDescription = "Move Down",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                     IconButton(
-                                        onClick = { onRemoveItem(idx + 1, item.songId) },
-                                        modifier = Modifier.size(36.dp),
+                                        onClick = { onRemoveItem(idx, item.songId) },
+                                        modifier = Modifier.size(34.dp),
                                     ) {
                                         Icon(
                                             painter = painterResource(R.drawable.close),
@@ -1529,23 +1608,83 @@ private fun SharedQueueCard(
                                             tint = MaterialTheme.colorScheme.error,
                                         )
                                     }
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 2.dp)
+                                            .size(24.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.drag_handle),
+                                            contentDescription = "Hold to drag",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (isItemDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
                                 }
                             }
                         },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (isItemDragging) {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            } else {
+                                Color.Transparent
+                            }
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .offset {
+                                if (isItemDragging) IntOffset(0, dragOffsetY.roundToInt()) else IntOffset.Zero
+                            }
+                            .zIndex(if (isItemDragging) 10f else 1f)
                             .clip(RoundedCornerShape(12.dp))
                             .then(
-                                if (canPlay) {
-                                    Modifier.clickable { onPlayItem(idx + 1, item.songId) }
+                                if (isItemDragging) {
+                                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                                 } else Modifier
-                            ),
+                            )
+                            .then(
+                                if (canPlay && !isItemDragging) {
+                                    Modifier.clickable { onPlayItem(idx, item.songId) }
+                                } else Modifier
+                            )
+                            .pointerInput(idx, canManageQueue, queue.size) {
+                                if (!canManageQueue) return@pointerInput
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        draggingIndex = idx
+                                        dragOffsetY = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragOffsetY += dragAmount.y
+                                        val rowHeightPx = 140f
+                                        if (dragOffsetY > rowHeightPx && idx < queue.size - 1) {
+                                            onMoveItem(idx, idx + 1)
+                                            draggingIndex = idx + 1
+                                            dragOffsetY -= rowHeightPx
+                                        } else if (dragOffsetY < -rowHeightPx && idx > 0) {
+                                            onMoveItem(idx, idx - 1)
+                                            draggingIndex = idx - 1
+                                            dragOffsetY += rowHeightPx
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        draggingIndex = null
+                                        dragOffsetY = 0f
+                                    },
+                                    onDragCancel = {
+                                        draggingIndex = null
+                                        dragOffsetY = 0f
+                                    }
+                                )
+                            },
                     )
                 }
-                if (queue.size > 20) {
+
+                if (queue.size > 25) {
                     Text(
-                        text = "+${queue.size - 20} more in queue (view in player queue)",
+                        text = "+${queue.size - 25} more in queue",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier

@@ -531,7 +531,7 @@ class LanTogetherServer(
             controllerName = participants[controllerId]?.name ?: hostDisplayName,
             stateVersion = stateVersion,
             serverNow = System.currentTimeMillis(),
-            state = playbackState?.copy(settings = settings),
+            state = playbackState?.let { s -> s.copy(artists = s.artists.filterNot { it.startsWith(ListenTogetherPlaybackState.META_PREFIX) || it.startsWith(ListenTogetherPlaybackState.QUEUE_PREFIX) }, settings = settings) },
             settings = settings,
         )
     }
@@ -2267,7 +2267,8 @@ class LanTogetherServer(
         var activeClass = isCurrent ? ' active' : '';
         var lockedClass = canControl ? '' : ' locked';
         var title = escapeHtml(item.title || 'Unknown Title');
-        var artist = escapeHtml(item.artist || 'AirBeats');
+        var rawArtist = (item.artist || 'AirBeats').replace(/__AB_[^;]*(;)?/g, '').trim();
+        var artist = escapeHtml(rawArtist || 'AirBeats');
         var songIdEsc = escapeHtml(item.id || '');
         var thumbUrl = item.thumbnailUrl ? escapeHtml(item.thumbnailUrl) : '';
         var thumbHtml = thumbUrl
@@ -2349,7 +2350,8 @@ class LanTogetherServer(
       }
 
       if (titleEl) titleEl.innerText = state.title;
-      var artistStr = (state.artists && state.artists.length) ? state.artists.join(', ') : 'AirBeats';
+      var cleanArtists = (state.artists || []).filter(function(a) { return a && typeof a === 'string' && !a.startsWith('__AB_META__:') && !a.startsWith('__AB_Q'); });
+      var artistStr = cleanArtists.length ? cleanArtists.join(', ') : 'AirBeats';
       if (artistEl) artistEl.innerText = artistStr;
       if (descEl) descEl.innerText = 'Streaming live over LAN • Host: ' + (data.hostName || 'AirBeats');
       document.title = (state.isPlaying ? '\u25B6 ' : '\u23F8 ') + state.title + ' \u2022 AirBeats';
