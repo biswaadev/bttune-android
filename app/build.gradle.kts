@@ -2,15 +2,17 @@ import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.kapt)
-    alias(libs.plugins.hilt.android)
-    alias(libs.plugins.ksp)
+    id("com.android.application")
+    kotlin("android")
     alias(libs.plugins.kotlin.serialization)
-    id("kotlin-parcelize")
+    kotlin("kapt")
     id("com.google.gms.google-services")
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.ksp)
+    alias(libs.plugins.compose.compiler)
+    id("kotlin-parcelize")
 }
+
 
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
