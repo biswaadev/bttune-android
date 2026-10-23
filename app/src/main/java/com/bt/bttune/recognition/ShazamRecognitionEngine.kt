@@ -114,7 +114,7 @@ class ShazamRecognitionEngine(
 
             val jsonBody = JSONObject().apply {
                 put("geolocation", JSONObject().apply {
-                    put("altitude", 300)
+                    put("altitude", 300 as Any)
                     put("latitude", 45.0)
                     put("longitude", 2.0)
                 })
