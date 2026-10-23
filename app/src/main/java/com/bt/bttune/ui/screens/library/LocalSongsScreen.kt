@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,9 +38,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.bt.bttune.LocalPlayerAwareWindowInsets
 import com.bt.bttune.LocalPlayerConnection
 import com.bt.bttune.R
 import com.bt.bttune.models.LocalSong
+import com.bt.bttune.playback.queues.ListQueue
 import com.bt.bttune.viewmodels.LocalSongsViewModel
 
 @Composable
@@ -88,31 +91,10 @@ fun LocalSongsScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        mediaMetadata?.thumbnailUrl?.let { imageUrl ->
-            com.bt.bttune.ui.component.BlurredBackground(
-                model = imageUrl
-            )
-            val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        if (isDark) Brush.verticalGradient(
-                            listOf(
-                                Color.Black.copy(alpha = 0.2f),
-                                Color.Black.copy(alpha = 0.5f),
-                                Color.Black.copy(alpha = 0.85f)
-                            )
-                        ) else Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
-                            )
-                        )
-                    )
-            )
-        }
+        // Adaptive background: blurred song thumbnail when playing, Library mesh when no song playing
+        com.bt.bttune.ui.component.ScreenAdaptiveBackground(
+            artworkUrl = mediaMetadata?.thumbnailUrl
+        )
 
         // ── Main content ──────────────────────────────────────────────────────
         Column(
@@ -128,6 +110,12 @@ fun LocalSongsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
+                IconButton(onClick = navController::navigateUp) {
+                    Icon(
+                        painter = painterResource(R.drawable.arrow_back),
+                        contentDescription = "Back",
+                    )
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Local Songs",
@@ -208,7 +196,11 @@ fun LocalSongsScreen(
                 else -> {
                     LazyColumn(
                         state = listState,
-                        contentPadding = PaddingValues(bottom = 160.dp),
+                        contentPadding = PaddingValues(
+                            bottom = LocalPlayerAwareWindowInsets.current
+                                .asPaddingValues()
+                                .calculateBottomPadding() + 16.dp,
+                        ),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         itemsIndexed(
@@ -220,9 +212,13 @@ fun LocalSongsScreen(
                                 onClick = {
                                     playerConnection?.let { pc ->
                                         val mediaItems = songs.map { it.toMediaItem() }
-                                        pc.player.setMediaItems(mediaItems, index, 0L)
-                                        pc.player.prepare()
-                                        pc.player.play()
+                                        pc.playQueue(
+                                            ListQueue(
+                                                title = "Local Songs",
+                                                items = mediaItems,
+                                                startIndex = index,
+                                            )
+                                        )
                                     }
                                 },
                             )
@@ -310,11 +306,21 @@ private fun SearchBar(
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isFrosted = com.bt.bttune.ui.component.isFrostedGlassUiEnabled()
+    val barShape = RoundedCornerShape(50.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
-            .clip(RoundedCornerShape(50.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f))
+            .clip(barShape)
+            .then(
+                if (isFrosted) {
+                    Modifier.border(1.dp, Color.White.copy(alpha = 0.15f), barShape)
+                } else Modifier
+            )
+            .background(
+                if (isFrosted) Color.White.copy(alpha = 0.08f)
+                else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f)
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Icon(
@@ -338,6 +344,9 @@ private fun SearchBar(
                         Text(
                             text = "Search songs, artists, albums…",
                             style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         )
                     }
@@ -471,8 +480,9 @@ private fun EmptyState(
 // ── Extension: LocalSong → MediaItem ─────────────────────────────────────────
 fun LocalSong.toMediaItem(): MediaItem =
     MediaItem.Builder()
-        .setMediaId(uri.toString()) // ✅ FIXED
+        .setMediaId(uri.toString())
         .setUri(uri)
+        .setCustomCacheKey(uri.toString())
         .setTag(
             com.bt.bttune.models.MediaMetadata(
                 id = uri.toString(),

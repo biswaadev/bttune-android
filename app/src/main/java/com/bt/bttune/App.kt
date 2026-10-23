@@ -1,8 +1,11 @@
 package com.bt.bttune
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.os.Build
+import android.os.Bundle
+import com.bt.bttune.utils.AutoBackupManager
 import android.widget.Toast
 import com.bt.bttune.ui.component.LocaleAwareApplication
 import com.bt.bttune.utils.dataStore
@@ -30,11 +33,13 @@ import com.bt.bttune.constants.ProxyEnabledKey
 import com.bt.bttune.constants.ProxyTypeKey
 import com.bt.bttune.constants.ProxyUrlKey
 import com.bt.bttune.constants.SYSTEM_DEFAULT
+import com.bt.bttune.constants.SpotifyCookieKey
 import com.bt.bttune.constants.UseLoginForBrowse
 import com.bt.bttune.constants.VisitorDataKey
 import com.bt.bttune.db.MusicDatabase
 import com.bt.bttune.extensions.toEnum
 import com.bt.bttune.extensions.toInetSocketAddress
+import com.bt.bttune.extensions.tryOrNull
 import com.bt.bttune.ui.component.NamePreferenceManager
 import com.bt.bttune.utils.BTTUNEStatsCloudSync
 import com.bt.bttune.utils.dataStore
@@ -67,13 +72,78 @@ class App : LocaleAwareApplication(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.bt.bttune.utils.RemoteConfigManager.initialize(this)
         kotlinx.coroutines.runBlocking {
             runCatching { dataStore.initializeCache() }
         }
         Timber.plant(com.bt.bttune.utils.GlobalLogTree())
 
+        // Sanitize and heal any corrupted or fragmented playback events
+        GlobalScope.launch(Dispatchers.IO) {
+            com.bt.bttune.db.DatabaseSanitizer.sanitizeDatabase(database)
+        }
+
+        // Ensure active FCM subscription to personal numeric topic (e.g. "1", "2", "10")
+        val assignedUserNum = BTTUNEStatsCloudSync.getUserNumber(this)
+        if (!assignedUserNum.isNullOrBlank()) {
+            runCatching {
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().subscribeToTopic(assignedUserNum)
+            }
+        }
+
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            private var startedActivities = 0
+            override fun onActivityStarted(activity: Activity) {
+                if (startedActivities == 0) {
+                    // App opened or brought to foreground: fetch fresh URLs and developer news from Firebase immediately
+                    com.bt.bttune.utils.RemoteConfigManager.refresh()
+                    com.bt.bttune.utils.DeveloperNewsManager.refresh()
+
+                    // Auto backup on every app open to Documents/BTTUNE if enabled
+                    GlobalScope.launch(Dispatchers.IO) {
+                        tryOrNull {
+                            AutoBackupManager.performAutoBackupToStorageIfEnabled(this@App, database)
+                        }
+                    }
+                }
+                startedActivities++
+            }
+            override fun onActivityStopped(activity: Activity) {
+                startedActivities--
+                if (startedActivities <= 0) {
+                    GlobalScope.launch(Dispatchers.IO) {
+                        tryOrNull {
+                            val success = AutoBackupManager.createAutoBackup(this@App, database)
+                            if (success) {
+                                val file = AutoBackupManager.getAutoBackupFile(this@App)
+                                AutoBackupManager.uploadToCloud(this@App, file)
+                            }
+                        }
+                    }
+                }
+            }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
+
+        // Initialize Developer News & Announcements (Firebase Realtime Database)
+        try {
+            com.bt.bttune.utils.DeveloperNewsManager.init(this)
+        } catch (_: Exception) {}
+
         try {
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                // Ignore benign Navigation Compose back-stack transition race condition
+                val isNavRace = throwable is java.lang.IllegalStateException &&
+                    throwable.message?.contains("Cannot transition entry that is not in the back stack") == true
+                if (isNavRace) {
+                    Timber.w(throwable, "Ignored NavHost back-stack transition race condition")
+                    return@setDefaultUncaughtExceptionHandler
+                }
+
                 try {
                     val sw = java.io.StringWriter()
                     val pw = java.io.PrintWriter(sw)
@@ -85,16 +155,16 @@ class App : LocaleAwareApplication(), ImageLoaderFactory {
                         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     }
                     startActivity(intent)
-                    try { Thread.sleep(100) } catch (_: InterruptedException) {}
+                    try { Thread.sleep(500) } catch (_: InterruptedException) {}
                 } catch (e: Exception) {
-                    reportException(e)
+                    Timber.e(e, "UncaughtExceptionHandler failure")
                 } finally {
                     android.os.Process.killProcess(android.os.Process.myPid())
                     kotlin.system.exitProcess(2)
                 }
             }
         } catch (e: Exception) {
-            reportException(e)
+            Timber.e(e, "Failed to register UncaughtExceptionHandler")
         }
 
         val locale = Locale.getDefault()
@@ -135,50 +205,20 @@ class App : LocaleAwareApplication(), ImageLoaderFactory {
                 namePreferenceManager = namePreferenceManager,
             )?.onFailure(::reportException)
         }
-
         GlobalScope.launch(Dispatchers.IO) {
-            runCatching {
-                val email = namePreferenceManager.accountEmail.first().ifBlank {
-                    dataStore[AccountEmailKey] ?: ""
-                }
-                val name = namePreferenceManager.userName.first().ifBlank { "BTTUNE User" }
-
-                val automaticCloudBackupEnabled = getSharedPreferences("backup_settings", Context.MODE_PRIVATE)
-                    .getBoolean("enable_cloud_upload", true)
-
-                if (automaticCloudBackupEnabled && email.isNotBlank()) {
-                    Timber.i("App launch: Starting automatic cloud backup upload for $email")
-                    val backupViewModel = com.bt.bttune.viewmodels.BackupRestoreViewModel(com.bt.bttune.db.InternalDatabase.newInstance(this@App))
-                    val result = backupViewModel.backupToDrive(this@App, email, name)
-                    if (result is com.bt.bttune.utils.DriveResult.Success) {
-                        dataStore.edit { preferences ->
-                            preferences[com.bt.bttune.constants.LastBackupTimestampKey] = System.currentTimeMillis()
+            dataStore.data
+                .map { it[SpotifyCookieKey] }
+                .distinctUntilChanged()
+                .collect { spDc ->
+                    if (!spDc.isNullOrBlank() && com.bt.bttune.spotify.Spotify.accessToken.isNullOrBlank()) {
+                        tryOrNull {
+                            com.bt.bttune.spotify.SpotifyAuth.fetchAccessToken(spDc).onSuccess { token ->
+                                com.bt.bttune.spotify.Spotify.accessToken = token.accessToken
+                            }
                         }
-                        Timber.i("App launch: Cloud backup upload completed successfully for $email")
-                    } else {
-                        Timber.e("App launch: Cloud backup upload failed for $email")
                     }
-
-                    // Schedule periodic 24-hour backup worker
-                    val workRequest = androidx.work.PeriodicWorkRequestBuilder<com.bt.bttune.worker.DailyBackupWorker>(1, java.util.concurrent.TimeUnit.DAYS)
-                        .setConstraints(
-                            androidx.work.Constraints.Builder()
-                                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                                .build()
-                        )
-                        .build()
-
-                    androidx.work.WorkManager.getInstance(this@App).enqueueUniquePeriodicWork(
-                        "DailyBackupWorker",
-                        androidx.work.ExistingPeriodicWorkPolicy.KEEP,
-                        workRequest
-                    )
                 }
-            }.onFailure { e ->
-                Timber.e(e, "App launch: Error during automatic cloud backup")
-            }
         }
-
         GlobalScope.launch {
             dataStore.data
                 .map { it[VisitorDataKey] }
@@ -239,27 +279,42 @@ class App : LocaleAwareApplication(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader {
         val cacheSize = dataStore[MaxImageCacheSizeKey]
 
-        // will crash app if you set to 0 after cache starts being used
+        val builder = ImageLoader.Builder(this)
+            .crossfade(true)
+            .respectCacheHeaders(false)
+            .allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .strongReferencesEnabled(true)
+                    .build()
+            }
+            .memoryCachePolicy(CachePolicy.ENABLED)
+
         if (cacheSize == 0) {
-            return ImageLoader.Builder(this)
-                .crossfade(true)
-                .respectCacheHeaders(false)
-                .allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            return builder
                 .diskCachePolicy(CachePolicy.DISABLED)
                 .build()
         }
 
-        return ImageLoader.Builder(this)
-            .crossfade(true)
-            .respectCacheHeaders(false)
-            .allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-            .diskCache(
+        return builder
+            .diskCachePolicy(CachePolicy.ENABLED)
+            .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("coil"))
                     .maxSizeBytes((cacheSize ?: 512) * 1024 * 1024L)
                     .build()
-            )
+            }
             .build()
+    }
+
+    override fun startForegroundService(service: android.content.Intent?): android.content.ComponentName? {
+        return try {
+            super.startForegroundService(service)
+        } catch (e: Exception) {
+            Timber.e(e, "ForegroundServiceStartNotAllowedException caught and suppressed in App.startForegroundService")
+            null
+        }
     }
 
     companion object {

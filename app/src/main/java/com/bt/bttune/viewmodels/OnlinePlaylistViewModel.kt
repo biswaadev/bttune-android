@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.bt.bttune.innertube.YouTube
 import com.bt.bttune.innertube.models.PlaylistItem
 import com.bt.bttune.innertube.models.SongItem
+import com.bt.bttune.innertube.models.Artist
+import com.bt.bttune.innertube.models.Album
+import com.bt.bttune.spotify.Spotify
+import com.bt.bttune.spotify.models.SpotifyPlaylistTrack
 import com.bt.bttune.innertube.utils.completedPlaylistPage
 import com.bt.bttune.db.MusicDatabase
 import com.bt.bttune.utils.reportException
@@ -23,7 +27,7 @@ class OnlinePlaylistViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     database: MusicDatabase
 ) : ViewModel() {
-    private val playlistId = savedStateHandle.get<String>("playlistId")!!
+    val playlistId = savedStateHandle.get<String>("playlistId")!!
 
     val playlist = MutableStateFlow<PlaylistItem?>(null)
     val playlistSongs = MutableStateFlow<List<SongItem>>(emptyList())
@@ -60,17 +64,32 @@ class OnlinePlaylistViewModel @Inject constructor(
         continuation?.let {
             viewModelScope.launch(Dispatchers.IO) {
                 _isLoadingMore.value = true
-                YouTube.playlistContinuation(it)
-                    .onSuccess { playlistContinuationPage ->
-                        val currentSongs = playlistSongs.value.toMutableList()
-                        currentSongs.addAll(playlistContinuationPage.songs)
-                        playlistSongs.value = currentSongs.distinctBy { it.id }
-                        continuation = playlistContinuationPage.continuation
-                        _isLoadingMore.value = false
-                    }.onFailure { throwable ->
-                        _isLoadingMore.value = false
-                        reportException(throwable)
-                    }
+                if (playlistId.startsWith("sp:")) {
+                    Spotify.playlistTracks(playlistId.removePrefix("sp:"), offset = playlistSongs.value.size)
+                        .onSuccess { paging ->
+                            val currentSongs = playlistSongs.value.toMutableList()
+                            currentSongs.addAll(paging.items.mapNotNull { it.toSongItem() })
+                            playlistSongs.value = currentSongs.distinctBy { it.id }
+                            
+                            continuation = if (playlistSongs.value.size < paging.total) "sp:next" else null
+                            _isLoadingMore.value = false
+                        }.onFailure { throwable ->
+                            _isLoadingMore.value = false
+                            reportException(throwable)
+                        }
+                } else {
+                    YouTube.playlistContinuation(it)
+                        .onSuccess { playlistContinuationPage ->
+                            val currentSongs = playlistSongs.value.toMutableList()
+                            currentSongs.addAll(playlistContinuationPage.songs)
+                            playlistSongs.value = currentSongs.distinctBy { it.id }
+                            continuation = playlistContinuationPage.continuation
+                            _isLoadingMore.value = false
+                        }.onFailure { throwable ->
+                            _isLoadingMore.value = false
+                            reportException(throwable)
+                        }
+                }
             }
         }
     }
@@ -95,17 +114,44 @@ class OnlinePlaylistViewModel @Inject constructor(
 
             _error.value = null
 
-            YouTube
-                .playlist(playlistId)
-                .completedPlaylistPage()
-                .onSuccess { playlistPage ->
-                    playlist.value = playlistPage.playlist
-                    playlistSongs.value = playlistPage.songs.distinctBy { it.id }
-                    continuation = playlistPage.songsContinuation
+            if (playlistId.startsWith("sp:")) {
+                val spId = playlistId.removePrefix("sp:")
+                Spotify.playlist(spId).onSuccess { spPlaylist ->
+                    playlist.value = PlaylistItem(
+                        id = playlistId,
+                        title = spPlaylist.name,
+                        author = Artist(name = spPlaylist.owner?.displayName ?: "Spotify", id = null),
+                        songCountText = spPlaylist.tracks?.total?.toString() ?: "0",
+                        thumbnail = spPlaylist.images.firstOrNull()?.url ?: "",
+                        playEndpoint = null,
+                        shuffleEndpoint = null,
+                        radioEndpoint = null
+                    )
+                    
+                    Spotify.playlistTracks(spId).onSuccess { paging ->
+                        playlistSongs.value = paging.items.mapNotNull { it.toSongItem() }.distinctBy { it.id }
+                        continuation = if (playlistSongs.value.size < paging.total) "sp:next" else null
+                    }.onFailure { throwable ->
+                        _error.value = throwable.message ?: "Failed to load Spotify tracks"
+                        reportException(throwable)
+                    }
                 }.onFailure { throwable ->
-                    _error.value = throwable.message ?: "Failed to load playlist"
+                    _error.value = throwable.message ?: "Failed to load Spotify playlist"
                     reportException(throwable)
                 }
+            } else {
+                YouTube
+                    .playlist(playlistId)
+                    .completedPlaylistPage()
+                    .onSuccess { playlistPage ->
+                        playlist.value = playlistPage.playlist
+                        playlistSongs.value = playlistPage.songs.distinctBy { it.id }
+                        continuation = playlistPage.songsContinuation
+                    }.onFailure { throwable ->
+                        _error.value = throwable.message ?: "Failed to load playlist"
+                        reportException(throwable)
+                    }
+            }
 
             if (initial) {
                 _isLoading.value = false
@@ -113,5 +159,19 @@ class OnlinePlaylistViewModel @Inject constructor(
                 _isRefreshing.value = false
             }
         }
+    }
+    
+    private fun SpotifyPlaylistTrack.toSongItem(): SongItem? {
+        val t = this.track ?: return null
+        val a = t.album
+        return SongItem(
+            id = "sp:${t.id}",
+            title = t.name,
+            artists = t.artists.map { Artist(name = it.name, id = it.id) },
+            album = if (a != null) Album(name = a.name, id = a.id ?: "") else null,
+            duration = (t.durationMs / 1000).toInt(),
+            thumbnail = t.album?.images?.firstOrNull()?.url ?: "",
+            explicit = t.explicit
+        )
     }
 }

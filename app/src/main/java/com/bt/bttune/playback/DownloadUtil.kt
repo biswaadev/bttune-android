@@ -14,11 +14,12 @@ import androidx.media3.exoplayer.offline.DownloadManager
 import androidx.media3.exoplayer.offline.DownloadNotificationHelper
 import com.bt.bttune.innertube.YouTube
 import com.bt.bttune.constants.AudioQuality
-import com.bt.bttune.constants.AudioQualityKey
+import com.bt.bttune.constants.DownloadQualityKey
 import com.bt.bttune.db.MusicDatabase
 import com.bt.bttune.db.entities.FormatEntity
 import com.bt.bttune.di.DownloadCache
 import com.bt.bttune.di.PlayerCache
+import com.bt.bttune.extensions.tryOrNull
 import com.bt.bttune.utils.YTPlayerUtils
 import com.bt.bttune.utils.enumPreference
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -45,7 +46,7 @@ constructor(
     @PlayerCache val playerCache: SimpleCache,
 ) {
     private val connectivityManager = context.getSystemService<ConnectivityManager>()!!
-    private val audioQuality by enumPreference(context, AudioQualityKey, AudioQuality.AUTO)
+    private val downloadQuality by enumPreference(context, DownloadQualityKey, AudioQuality.HIGH)
     private val songUrlCache = HashMap<String, Pair<String, Long>>()
     private val dataSourceFactory =
         ResolvingDataSource.Factory(
@@ -72,11 +73,21 @@ constructor(
                 return@Factory dataSpec.withUri(it.first.toUri())
             }
 
+            if (mediaId.startsWith("JS:")) {
+                val streamUrl = runBlocking(Dispatchers.IO) {
+                    com.bt.bttune.jiosaavn.JioSaavnApi.getStreamUrl(mediaId)
+                }
+                if (streamUrl != null) {
+                    songUrlCache[mediaId] = Pair(streamUrl, System.currentTimeMillis() + 3600000L)
+                    return@Factory dataSpec.withUri(streamUrl.toUri())
+                }
+            }
+
             val playedFormat = runBlocking(Dispatchers.IO) { database.format(mediaId).first() }
             val playbackData = runBlocking(Dispatchers.IO) {
                 YTPlayerUtils.playerResponseForPlayback(
                     mediaId,
-                    audioQuality = audioQuality,
+                    audioQuality = downloadQuality,
                     connectivityManager = connectivityManager,
                 )
             }.getOrThrow()

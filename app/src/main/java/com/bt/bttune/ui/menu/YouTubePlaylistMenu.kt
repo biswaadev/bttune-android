@@ -57,6 +57,7 @@ import com.bt.bttune.R
 import com.bt.bttune.constants.ListThumbnailSize
 import com.bt.bttune.constants.ThumbnailCornerRadius
 import com.bt.bttune.db.entities.PlaylistEntity
+import com.bt.bttune.db.entities.PlaylistSong
 import com.bt.bttune.db.entities.PlaylistSongMap
 import com.bt.bttune.extensions.toMediaItem
 import com.bt.bttune.models.MediaMetadata
@@ -74,6 +75,7 @@ import com.bt.bttune.utils.joinByBullet
 import com.bt.bttune.utils.makeTimeString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -107,6 +109,56 @@ fun YouTubePlaylistMenu(
     val notAddedList by remember {
         mutableStateOf(mutableListOf<MediaMetadata>())
     }
+
+    val exportPlaylistLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")
+        ) { uri ->
+            onDismiss()
+            if (uri != null) {
+                val playlistTitle = playlist.title
+                val safeSongs = songs
+                val playlistId = playlist.id
+                val currentDbPlaylist = dbPlaylist
+                com.bt.bttune.utils.SaveToStorageUtil.applicationScope.launch(Dispatchers.IO) {
+                    val songsToExport: List<MediaMetadata> = if (safeSongs.isNotEmpty()) {
+                        safeSongs.map { it.toMediaMetadata() }
+                    } else if (currentDbPlaylist != null) {
+                        val localSongs = database.playlistSongs(currentDbPlaylist.id).first().map(PlaylistSong::song)
+                        if (localSongs.isNotEmpty()) {
+                            localSongs.map { song ->
+                                MediaMetadata(
+                                    id = song.id,
+                                    title = song.title,
+                                    artists = song.artists.map { MediaMetadata.Artist(id = it.id, name = it.name) },
+                                    duration = song.duration,
+                                    thumbnailUrl = song.thumbnailUrl,
+                                    album = song.album?.let { MediaMetadata.Album(id = it.id, title = it.title) }
+                                )
+                            }
+                        } else {
+                            YouTube.playlist(playlistId).completedPlaylistPage().getOrNull()?.songs.orEmpty().map { it.toMediaMetadata() }
+                        }
+                    } else {
+                        YouTube.playlist(playlistId).completedPlaylistPage().getOrNull()?.songs.orEmpty().map { it.toMediaMetadata() }
+                    }
+
+                    val result = com.bt.bttune.utils.PlaylistFileHelper.exportPlaylistToUri(
+                        context = context,
+                        uri = uri,
+                        playlistName = playlistTitle,
+                        mediaList = songsToExport
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (result.isSuccess) {
+                            android.widget.Toast.makeText(context, R.string.playlist_exported, android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, result.exceptionOrNull()?.message ?: "Export failed", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
 
     AddToPlaylistDialog(
         isVisible = showChoosePlaylistDialog,
@@ -448,6 +500,59 @@ fun YouTubePlaylistMenu(
             showChoosePlaylistDialog = true
         }
 
+        val inLibrary = dbPlaylist?.playlist?.bookmarkedAt != null
+        GridMenuItem(
+            icon = if (inLibrary) R.drawable.favorite else R.drawable.favorite_border,
+            title = if (inLibrary) R.string.remove_from_library else R.string.add_to_library,
+        ) {
+            if (dbPlaylist == null) {
+                val playlistEntity = PlaylistEntity(
+                    id = playlist.id,
+                    name = playlist.title,
+                    browseId = playlist.id,
+                    playEndpointParams = playlist.playEndpoint?.params,
+                    shuffleEndpointParams = playlist.shuffleEndpoint?.params,
+                    radioEndpointParams = playlist.radioEndpoint?.params
+                ).toggleLike()
+                database.transaction {
+                    insert(playlistEntity)
+                }
+                coroutineScope.launch(Dispatchers.IO) {
+                    val songsToInsert = songs.ifEmpty {
+                        YouTube.playlist(playlist.id).completedPlaylistPage()
+                            .getOrNull()?.songs.orEmpty()
+                    }.map { it.toMediaMetadata() }
+
+                    database.transaction {
+                        songsToInsert.forEach(::insert)
+                        songsToInsert.mapIndexed { index, song ->
+                            PlaylistSongMap(
+                                songId = song.id,
+                                playlistId = playlistEntity.id,
+                                position = index
+                            )
+                        }.forEach(::insert)
+                    }
+                }
+                android.widget.Toast.makeText(context, R.string.add_to_library, android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                database.transaction {
+                    update(dbPlaylist!!.playlist.toggleLike())
+                }
+                val msg = if (inLibrary) R.string.remove_from_library else R.string.add_to_library
+                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+            }
+            onDismiss()
+        }
+
+        GridMenuItem(
+            icon = R.drawable.export,
+            title = R.string.export_playlist,
+        ) {
+            val safeName = playlist.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "playlist" }
+            exportPlaylistLauncher.launch("$safeName.txt")
+        }
+
         if (playlist.isEditable) {
             GridMenuItem(
                 icon = R.drawable.edit,
@@ -496,28 +601,11 @@ fun YouTubePlaylistMenu(
                     val savingToastMsg = context.getString(R.string.saving_playlist_to_storage, playlist.title)
                     val playlistTitle = playlist.title
                     android.widget.Toast.makeText(context, savingToastMsg, android.widget.Toast.LENGTH_SHORT).show()
-                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        com.bt.bttune.utils.SaveToStorageUtil
-                            .savePlaylistToMusicFolder(context, playlistTitle, songs.map { it.toMediaMetadata() })
-                            .onSuccess { count ->
-                                launch(kotlinx.coroutines.Dispatchers.Main) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Saved $count songs to Music/BTTUNE/$playlistTitle",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                            .onFailure { e ->
-                                launch(kotlinx.coroutines.Dispatchers.Main) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Save failed: ${e.message}",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                    }
+                    com.bt.bttune.utils.SaveToStorageUtil.savePlaylistToMusicFolderAsync(
+                        context = context,
+                        playlistName = playlistTitle,
+                        mediaList = songs.map { it.toMediaMetadata() }
+                    )
                     onDismiss()
                 }
             }

@@ -1,8 +1,14 @@
 package com.bt.bttune.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import com.bt.bttune.ui.component.isFrostedGlassUiEnabled
+import com.bt.bttune.ui.component.settingsCardContainerColor
+import com.bt.bttune.ui.component.settingsCardBorder
+import com.bt.bttune.ui.component.AvatarDisplay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -67,7 +74,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.shape.GenericShape
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import com.bt.bttune.data.repository.NowPlayingTrack
 import com.bt.bttune.db.entities.Artist
+import com.bt.bttune.db.entities.EventWithSong
 import com.bt.bttune.db.entities.Song
 import com.bt.bttune.db.entities.SongWithStats
 import coil.compose.AsyncImage
@@ -107,6 +122,7 @@ import com.bt.bttune.viewmodels.StatsViewModel
 import com.bt.bttune.ui.component.RankBadge
 import com.bt.bttune.ui.component.BTTUNERank
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -117,6 +133,8 @@ fun StatsScreen(
     navController: NavController,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
+    val isFrosted = isFrostedGlassUiEnabled()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
@@ -136,6 +154,8 @@ fun StatsScreen(
     val lazyListState = rememberLazyListState()
     val selectedOption by viewModel.selectedOption.collectAsState()
     val globalStats by viewModel.globalStats.collectAsState()
+    val nowPlayingTrack by viewModel.nowPlayingTrack.collectAsState()
+    val recentEvents by viewModel.recentEvents.collectAsState()
 
     // BottomSheet para Insight
     var showInsightBottomSheet by remember { mutableStateOf(false) }
@@ -225,35 +245,11 @@ fun StatsScreen(
         }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // Adaptive background: blurred song thumbnail when playing, Library mesh when no song playing
         val artworkUrl = mediaMetadata?.thumbnailUrl
-        artworkUrl?.let { imageUrl ->
-            com.bt.bttune.ui.component.BlurredBackground(
-                model = imageUrl
-            )
-            val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            val overlayBrush = if (isDarkTheme) {
-                Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.2f),
-                        Color.Black.copy(alpha = 0.5f),
-                        Color.Black.copy(alpha = 0.85f)
-                    )
-                )
-            } else {
-                Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.2f),
-                        Color.White.copy(alpha = 0.5f),
-                        Color.White.copy(alpha = 0.85f)
-                    )
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(overlayBrush)
-            )
-        }
+        com.bt.bttune.ui.component.ScreenAdaptiveBackground(
+            artworkUrl = artworkUrl
+        )
 
         LazyColumn(
             state = lazyListState,
@@ -327,8 +323,11 @@ fun StatsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                    shape = RoundedCornerShape(if (isFrosted) 20.dp else 16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isFrosted) settingsCardContainerColor(true) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+                    ),
+                    border = settingsCardBorder(isFrosted)
                 ) {
                     Row(
                         modifier = Modifier
@@ -352,6 +351,22 @@ fun StatsScreen(
                 GlobalStatsBoardCard(
                     state = globalStats,
                     onRefresh = viewModel::refreshGlobalStats,
+                )
+            }
+
+            item {
+                ScrobblerStatsHubCard(
+                    nowPlaying = nowPlayingTrack,
+                    recentEvents = recentEvents,
+                    isFrosted = isFrosted,
+                    navController = navController,
+                    onSongClick = { songId ->
+                        playerConnection.playQueue(
+                            YouTubeQueue(
+                                endpoint = WatchEndpoint(songId),
+                            ),
+                        )
+                    },
                 )
             }
 
@@ -596,10 +611,15 @@ fun StatsScreen(
 
     // BottomSheet de Insight
     if (showInsightBottomSheet) {
+        val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ModalBottomSheet(
             onDismissRequest = { showInsightBottomSheet = false },
             sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isFrosted) (if (isDark) Color(0xFF141414).copy(alpha = 0.88f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)) else MaterialTheme.colorScheme.surface,
+            shape = sheetShape,
+            modifier = Modifier.then(
+                if (isFrosted) Modifier.border(BorderStroke(1.dp, if (isDark) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)), sheetShape) else Modifier
+            )
         ) {
             InsightBottomSheetContent(
                 onNavigateToFullInsight = {
@@ -629,6 +649,7 @@ fun StatsScreen(
         WeeklyGlobalStatsSheet(
             users = weeklyUsers,
             currentUserId = globalStats.currentUserId,
+            currentUserName = globalStats.currentUserName,
             onDismiss = {
                 viewModel.markWeeklyPopupSeen()
                 showWeeklyGlobalStats = false
@@ -645,13 +666,20 @@ private fun GlobalStatsBoardCard(
     val users = state.board.users
     val topUser = users.firstOrNull()
     val currentUser = users.firstOrNull { it.id == state.currentUserId }
+        ?: if (state.currentUserName.isNotBlank() && !state.currentUserName.equals("BTTUNE User", ignoreCase = true)) {
+            users.firstOrNull { it.name.trim().equals(state.currentUserName.trim(), ignoreCase = true) }
+        } else null
 
+    val isFrosted = isFrostedGlassUiEnabled()
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(if (isFrosted) 20.dp else 16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isFrosted) settingsCardContainerColor(true) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+        ),
+        border = settingsCardBorder(isFrosted)
     ) {
         Column(
             modifier = Modifier
@@ -670,7 +698,7 @@ private fun GlobalStatsBoardCard(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = topUser?.let { "Most listened: ${it.name} • Total Users: ${users.size}" } ?: "Waiting for daily cloud stats",
+                        text = topUser?.let { "Most listened: ${it.name} • Top ${users.size}" } ?: "Waiting for daily cloud stats",
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
@@ -708,9 +736,10 @@ private fun GlobalStatsBoardCard(
                     .heightIn(max = 400.dp)
             ) {
                 items(users, key = { it.id }) { user ->
+                    val isCurrent = user.id == state.currentUserId || (currentUser != null && user.id == currentUser.id)
                     GlobalUserRankRow(
                         user = user,
-                        isCurrentUser = user.id == state.currentUserId,
+                        isCurrentUser = isCurrent,
                     )
                 }
             }
@@ -733,10 +762,18 @@ private fun GlobalStatPill(
     value: String,
     modifier: Modifier = Modifier,
 ) {
+    val isFrosted = isFrostedGlassUiEnabled()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val pillBg = if (isFrosted) (if (isDark) Color.White.copy(alpha = 0.06f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    val pillBorder = if (isDark) Color.White.copy(alpha = 0.10f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+
     Column(
         modifier =
             modifier
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                .background(pillBg, RoundedCornerShape(12.dp))
+                .then(
+                    if (isFrosted) Modifier.border(BorderStroke(1.dp, pillBorder), RoundedCornerShape(12.dp)) else Modifier
+                )
                 .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
@@ -749,15 +786,27 @@ private fun GlobalUserRankRow(
     user: GlobalStatsUser,
     isCurrentUser: Boolean,
 ) {
+    val isFrosted = isFrostedGlassUiEnabled()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val rowBg = if (isCurrentUser) {
+        if (isFrosted) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    } else {
+        if (isFrosted) (if (isDark) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    }
+    val rowBorder = if (isCurrentUser) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+    } else {
+        if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    }
+
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
-                .background(
-                    if (isCurrentUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) 
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    RoundedCornerShape(12.dp),
+                .background(rowBg, RoundedCornerShape(12.dp))
+                .then(
+                    if (isFrosted) Modifier.border(BorderStroke(1.dp, rowBorder), RoundedCornerShape(12.dp)) else Modifier
                 )
                 .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -769,7 +818,11 @@ private fun GlobalUserRankRow(
             fontWeight = FontWeight.Black,
             style = MaterialTheme.typography.bodyMedium,
         )
-        ProfileBubble(user.profileUrl, user.name)
+        if (isCurrentUser) {
+            AvatarDisplay(size = 34.dp)
+        } else {
+            ProfileBubble(user.profileUrl, user.name)
+        }
         Spacer(modifier = Modifier.width(10.dp))
         Row(
             modifier = Modifier.weight(1f),
@@ -804,11 +857,20 @@ private fun GlobalUserRankRow(
 private fun WeeklyGlobalStatsSheet(
     users: List<GlobalStatsUser>,
     currentUserId: String,
+    currentUserName: String = "",
     onDismiss: () -> Unit,
 ) {
+    val isFrosted = isFrostedGlassUiEnabled()
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = if (isFrosted) (if (isDark) Color(0xFF141414).copy(alpha = 0.88f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)) else MaterialTheme.colorScheme.surface,
+        shape = sheetShape,
+        modifier = Modifier.then(
+            if (isFrosted) Modifier.border(BorderStroke(1.dp, if (isDark) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)), sheetShape) else Modifier
+        ),
     ) {
         Box(
             modifier =
@@ -842,15 +904,31 @@ private fun WeeklyGlobalStatsSheet(
                         .weight(1f, fill = false)
                 ) {
                     items(users, key = { it.id }) { user ->
+                        val isCurrent = user.id == currentUserId || (currentUserName.isNotBlank() && !currentUserName.equals("BTTUNE User", ignoreCase = true) && user.name.trim().equals(currentUserName.trim(), ignoreCase = true))
+                        val rowBg = if (isCurrent) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                        } else if (isFrosted) {
+                            if (isDark) Color.White.copy(alpha = 0.06f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+                        }
+                        val rowBorder = if (isCurrent) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                        } else {
+                            if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                        }
+
                         Row(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 5.dp)
                                     .background(
-                                        if (user.id == currentUserId) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                                        rowBg,
                                         RoundedCornerShape(14.dp),
+                                    )
+                                    .then(
+                                        if (isFrosted) Modifier.border(BorderStroke(1.dp, rowBorder), RoundedCornerShape(14.dp)) else Modifier
                                     )
                                     .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -861,6 +939,12 @@ private fun WeeklyGlobalStatsSheet(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Black,
                             )
+                            if (isCurrent) {
+                                AvatarDisplay(size = 34.dp)
+                            } else {
+                                ProfileBubble(user.profileUrl, user.name)
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
                             Row(
                                 modifier = Modifier.weight(1f),
                                 verticalAlignment = Alignment.CenterVertically
@@ -1235,14 +1319,16 @@ fun StatsHighlightCard(
     imageUrl: String?,
     onClick: () -> Unit
 ) {
+    val isFrosted = isFrostedGlassUiEnabled()
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(if (isFrosted) 20.dp else 16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+            containerColor = if (isFrosted) settingsCardContainerColor(true) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        border = settingsCardBorder(isFrosted)
     ) {
         Row(
             modifier = Modifier
@@ -1282,3 +1368,463 @@ fun StatsHighlightCard(
         }
     }
 }
+
+private fun cleanPackageName(pkg: String?): String = when {
+    pkg == null -> "External App"
+    pkg.contains("spotify", ignoreCase = true) -> "Spotify"
+    pkg.contains("youtube", ignoreCase = true) -> "YT Music"
+    pkg.contains("apple", ignoreCase = true) -> "Apple Music"
+    pkg.contains("amazon", ignoreCase = true) -> "Amazon Music"
+    pkg.contains("deezer", ignoreCase = true) -> "Deezer"
+    pkg.contains("tidal", ignoreCase = true) -> "Tidal"
+    pkg.contains("jiosaavn", ignoreCase = true) -> "JioSaavn"
+    pkg.contains("wynk", ignoreCase = true) -> "Wynk"
+    pkg.contains("gaana", ignoreCase = true) -> "Gaana"
+    pkg.contains("soundcloud", ignoreCase = true) -> "SoundCloud"
+    pkg.contains("bandcamp", ignoreCase = true) -> "Bandcamp"
+    else -> pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+}
+
+private fun formatRelativeTime(dateTime: LocalDateTime): String {
+    val duration = Duration.between(dateTime, LocalDateTime.now())
+    return when {
+        duration.toMinutes() < 1 -> "Just now"
+        duration.toMinutes() < 60 -> "${duration.toMinutes()}m ago"
+        duration.toHours() < 24 -> "${duration.toHours()}h ago"
+        duration.toDays() == 1L -> "Yesterday"
+        duration.toDays() < 7 -> "${duration.toDays()}d ago"
+        else -> dateTime.format(DateTimeFormatter.ofPattern("dd MMM"))
+    }
+}
+
+@Composable
+fun LiveEqualizerBars(
+    modifier: Modifier = Modifier,
+    barColor: Color = MaterialTheme.colorScheme.primary,
+) {
+    val transition = rememberInfiniteTransition(label = "live_eq_bars")
+    val bar1 by transition.animateFloat(
+        initialValue = 3f,
+        targetValue = 13f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 380, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "eq_bar1"
+    )
+    val bar2 by transition.animateFloat(
+        initialValue = 13f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 310, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "eq_bar2"
+    )
+    val bar3 by transition.animateFloat(
+        initialValue = 5f,
+        targetValue = 15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 440, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "eq_bar3"
+    )
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(1.5.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.5.dp)
+                .height(bar1.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(barColor)
+        )
+        Box(
+            modifier = Modifier
+                .width(2.5.dp)
+                .height(bar2.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(barColor)
+        )
+        Box(
+            modifier = Modifier
+                .width(2.5.dp)
+                .height(bar3.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(barColor)
+        )
+    }
+}
+
+@Composable
+fun ScrobblerStatsHubCard(
+    nowPlaying: NowPlayingTrack?,
+    recentEvents: List<EventWithSong>,
+    isFrosted: Boolean,
+    navController: NavController,
+    onSongClick: (String) -> Unit = {},
+) {
+    val context = LocalContext.current
+    val scrobblerPrefs = remember { com.bt.bttune.data.local.ScrobblerPreferences(context) }
+    val settings by scrobblerPrefs.settings.collectAsState(initial = com.bt.bttune.data.local.ScrobblerSettings())
+    val selectedCount = settings.selectedPackages.size
+    val isEnabled = settings.enabled
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(if (isFrosted) 20.dp else 16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isFrosted) settingsCardContainerColor(true) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+        ),
+        border = settingsCardBorder(isFrosted)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (isEnabled) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.graphic_eq),
+                        contentDescription = null,
+                        tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Music Scrobbler",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isEnabled) Color(0xFF2E7D32).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = if (isEnabled) "Active" else "Inactive",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isEnabled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isEnabled) {
+                            if (nowPlaying != null) "Listening on ${cleanPackageName(nowPlaying.packageName)}"
+                            else if (selectedCount > 0) "$selectedCount app(s) monitored (Spotify, YT Music, etc.)"
+                            else "No apps selected — tap Select Apps"
+                        } else {
+                            "Track plays from Spotify, YT Music & other apps"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (nowPlaying != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // LIVE NOW PLAYING CARD
+            if (nowPlaying != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            nowPlaying.songId?.let { onSongClick(it) }
+                        },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Album Art / Fallback with Equalizer animation overlay
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            if (!nowPlaying.thumbnailUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = nowPlaying.thumbnailUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.music_note),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+
+                            // Equalizer badge on bottom right of cover art
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(3.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color.Black.copy(alpha = 0.7f))
+                                    .padding(horizontal = 3.dp, vertical = 2.dp)
+                            ) {
+                                LiveEqualizerBars(
+                                    modifier = Modifier.height(11.dp),
+                                    barColor = Color(0xFFFF4081)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = nowPlaying.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = nowPlaying.artist,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (!nowPlaying.packageName.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "via ${cleanPackageName(nowPlaying.packageName)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Pulse Dot + Now Playing Badge (as in screenshot 1)
+                        val pulseTransition = rememberInfiniteTransition(label = "pulse_badge")
+                        val dotAlpha by pulseTransition.animateFloat(
+                            initialValue = 0.35f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 650, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "dot_pulse"
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color(0xFFE91E63).copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, Color(0xFFE91E63).copy(alpha = 0.35f))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFE91E63).copy(alpha = dotAlpha))
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "Now Playing",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFF4081)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Quick actions
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = { navController.navigate("settings/scrobbler/apps") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.music_note),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Select Apps")
+                }
+
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { navController.navigate("settings/scrobbler") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.tune),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Settings")
+                }
+            }
+
+            // RECENT SCROBBLES / PLAYS PREVIEW (Matching Screenshot 1)
+            val scrobbleHistory = remember(recentEvents) {
+                recentEvents.filter { it.song.song.id.startsWith("scrobble_") || it.event.playTime > 0 }.take(5)
+            }
+            if (scrobbleHistory.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Recent Plays",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "${recentEvents.size} total",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    scrobbleHistory.forEach { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onSongClick(item.song.id) }
+                                .padding(vertical = 4.dp, horizontal = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                if (!item.song.thumbnailUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = item.song.thumbnailUrl,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.music_note),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.song.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = item.song.artists.joinToString { it.name }.ifEmpty { "Unknown Artist" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                            ) {
+                                Text(
+                                    text = formatRelativeTime(item.event.timestamp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

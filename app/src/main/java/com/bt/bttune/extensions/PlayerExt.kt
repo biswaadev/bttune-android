@@ -11,20 +11,26 @@ import com.bt.bttune.models.MediaMetadata
 import java.util.ArrayDeque
 
 fun Player.togglePlayPause() {
+    val connection = com.bt.bttune.playback.PlayerConnection.instance
+    if (connection != null && com.bt.bttune.utils.ListenTogetherSync.session.value != null && !com.bt.bttune.utils.ListenTogetherSync.isHost.value) {
+        connection.togglePlayPause()
+        return
+    }
     if (!playWhenReady && playbackState == Player.STATE_IDLE) {
         prepare()
     }
     playWhenReady = !playWhenReady
 }
 
-fun Player.toggleRepeatMode() {
-    repeatMode =
-        when (repeatMode) {
-            REPEAT_MODE_OFF -> REPEAT_MODE_ALL
-            REPEAT_MODE_ALL -> REPEAT_MODE_ONE
-            REPEAT_MODE_ONE -> REPEAT_MODE_OFF
-            else -> throw IllegalStateException()
-        }
+fun Player.toggleRepeatMode(): Int {
+    val newMode = when (repeatMode) {
+        REPEAT_MODE_OFF -> REPEAT_MODE_ALL
+        REPEAT_MODE_ALL -> REPEAT_MODE_ONE
+        REPEAT_MODE_ONE -> REPEAT_MODE_OFF
+        else -> REPEAT_MODE_OFF
+    }
+    repeatMode = newMode
+    return newMode
 }
 
 fun Player.getQueueWindows(): List<Timeline.Window> {

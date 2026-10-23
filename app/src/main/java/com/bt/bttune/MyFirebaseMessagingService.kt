@@ -14,6 +14,18 @@ import kotlin.random.Random
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        val from = remoteMessage.from ?: ""
+        if (from.startsWith("/topics/")) {
+            val topic = from.removePrefix("/topics/")
+            val rawTopic = topic.removePrefix("v").removeSuffix("-nightly")
+            // Check if this is a version-based topic (e.g. 6.1.1, 6.1.2)
+            if (rawTopic.matches(Regex("""^\d+\.\d+.*""")) && rawTopic != BuildConfig.VERSION_NAME) {
+                // Device is on a different/newer version, so unsubscribe immediately from this outdated topic
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().unsubscribeFromTopic(topic)
+                android.util.Log.w("FCM", "Unsubscribed and dropped message for obsolete version topic: $topic")
+                return
+            }
+        }
 
         val title = remoteMessage.notification?.title ?: "BTTUNE"
         val body = remoteMessage.notification?.body ?: "New message"
@@ -28,7 +40,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     private fun showNotification(title: String, message: String) {
 
-        val channelId = "bttune_channel"
+        val channelId = "airbeats_channel"
         val channelName = "BTTUNE Notifications"
 
         val notificationManager =

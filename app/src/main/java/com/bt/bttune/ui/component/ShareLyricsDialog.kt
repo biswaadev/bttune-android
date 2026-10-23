@@ -98,7 +98,7 @@ fun ShareLyricsDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.share),
+                                painter = painterResource(id = R.drawable.media3_icon_share),
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(20.dp)
@@ -149,7 +149,7 @@ fun ShareLyricsDialog(
                             val shareIntent = Intent().apply {
                                 action = Intent.ACTION_SEND
                                 type = "text/plain"
-                                val songLink = "https://play.bttune.app/song?id=${mediaMetadata?.id}"
+                                val songLink = com.bt.bttune.utils.RemoteConfigManager.getSongShareUrl(mediaMetadata?.id ?: "")
                                 putExtra(Intent.EXTRA_TEXT, "\"$lyricsText\"\n\n$songTitle - $artists\n$songLink")
                             }
                             context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.share_lyrics)))
@@ -160,7 +160,7 @@ fun ShareLyricsDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Icon(
-                            painter = painterResource(id = R.drawable.share),
+                            painter = painterResource(id = R.drawable.media3_icon_share),
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(20.dp)

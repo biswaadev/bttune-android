@@ -32,6 +32,7 @@ import com.bt.bttune.constants.SongFilterKey
 import com.bt.bttune.constants.SongSortDescendingKey
 import com.bt.bttune.constants.SongSortType
 import com.bt.bttune.constants.SongSortTypeKey
+import com.bt.bttune.constants.SpotifyCookieKey
 import com.bt.bttune.constants.TopSize
 import com.bt.bttune.db.MusicDatabase
 import com.bt.bttune.extensions.reversed
@@ -256,7 +257,23 @@ constructor(
             }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun sync() {
-        viewModelScope.launch(Dispatchers.IO) { syncUtils.syncSavedPlaylists() }
+        viewModelScope.launch(Dispatchers.IO) {
+            syncUtils.syncSavedPlaylists()
+            syncUtils.syncSpotifyPlaylists()
+        }
+    }
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            context.dataStore.data
+                .map { it[SpotifyCookieKey] }
+                .distinctUntilChanged()
+                .collect { spDc ->
+                    if (!spDc.isNullOrBlank()) {
+                        syncUtils.syncSpotifyPlaylists()
+                    }
+                }
+        }
     }
 
     val topValue =

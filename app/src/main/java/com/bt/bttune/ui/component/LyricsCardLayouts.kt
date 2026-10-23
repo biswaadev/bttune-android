@@ -95,7 +95,7 @@ internal fun LyricsBrandingRow(
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painter = painterResource(R.drawable.bttune),
+                painter = painterResource(R.drawable.airbeats),
                 contentDescription = null,
                 modifier = Modifier.size(15.dp),
                 colorFilter = ColorFilter.tint(

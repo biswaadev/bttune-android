@@ -606,7 +606,7 @@ fun EnhancedRichPresence(
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     Image(
-                                                        painter = painterResource(R.drawable.bttune),
+                                                        painter = painterResource(R.drawable.airbeats),
                                                         contentDescription = "BTTUNE",
                                                         modifier = Modifier
                                                             .size(20.dp)
@@ -685,7 +685,7 @@ fun EnhancedRichPresence(
                         onClick = {
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
-                                "https://play.bttune.app/song?id=${song?.id}".toUri()
+                                com.bt.bttune.utils.RemoteConfigManager.getSongShareUrl(song?.id ?: "").toUri()
                             )
                             context.startActivity(intent)
                         },
@@ -706,11 +706,16 @@ fun EnhancedRichPresence(
                     // Botón BTTUNE mejorado
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                "https://github.com/batz-dev/bttune-android".toUri()
-                            )
-                            context.startActivity(intent)
+                            val targetUrl = com.bt.bttune.utils.RemoteConfigManager.websiteUrl.ifBlank {
+                                com.bt.bttune.utils.RemoteConfigManager.getReleasesPageUrl()
+                            }
+                            if (targetUrl.isNotBlank()) {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    targetUrl.toUri()
+                                )
+                                context.startActivity(intent)
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         border = BorderStroke(
@@ -733,7 +738,7 @@ fun EnhancedRichPresence(
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
-                                painter = painterResource(R.drawable.bttune),
+                                painter = painterResource(R.drawable.airbeats),
                                 contentDescription = "BTTUNE",
                                 modifier = Modifier.size(12.dp),
                                 colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimary)

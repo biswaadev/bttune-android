@@ -105,7 +105,11 @@ import com.bt.bttune.constants.AodTextScaleKey
 import com.bt.bttune.constants.AodTransitionDurationKey
 import com.bt.bttune.ui.component.IconButton
 import com.bt.bttune.ui.component.PreferenceGroupTitle
+import com.bt.bttune.ui.component.SettingsPage
 import com.bt.bttune.ui.component.SwitchPreference
+import com.bt.bttune.ui.component.isFrostedGlassUiEnabled
+import com.bt.bttune.ui.component.settingsCardContainerColor
+import com.bt.bttune.ui.component.settingsCardBorder
 import com.bt.bttune.ui.utils.backToMain
 import com.bt.bttune.utils.rememberPreference
 import me.saket.squiggles.SquigglySlider
@@ -253,13 +257,11 @@ fun AODSettings(
         AodAutoTimeout.MINUTE_1, AodAutoTimeout.MINUTE_2
     )
 
-    Column(
-        modifier = Modifier
-            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current)
-            .verticalScroll(rememberScrollState())
+    SettingsPage(
+        title = stringResource(R.string.aod_screen_title),
+        navController = navController,
+        scrollBehavior = scrollBehavior
     ) {
-
-        Spacer(Modifier.height(8.dp))
 
         // ── SECCIÓN: Pantalla ─────────────────────────────────────────────
         AodSettingsSection(title = stringResource(R.string.aod_fullscreen_title)) {
@@ -529,21 +531,7 @@ fun AODSettings(
             )
         }
 
-        Spacer(Modifier.height(24.dp))
     }
-
-    TopAppBar(
-        title = { Text(stringResource(R.string.aod_screen_title)) },
-        navigationIcon = {
-            IconButton(
-                onClick = navController::navigateUp,
-                onLongClick = navController::backToMain,
-            ) {
-                Icon(painterResource(R.drawable.arrow_back), contentDescription = null)
-            }
-        },
-        scrollBehavior = scrollBehavior,
-    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -558,17 +546,25 @@ private fun AodSettingsSection(
     title: String,
     content: @Composable () -> Unit,
 ) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 10.dp, start = 4.dp)
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp
+            ),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp, top = 12.dp)
         )
+        val isFrosted = isFrostedGlassUiEnabled()
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = RoundedCornerShape(28.dp),
+            color = settingsCardContainerColor(isFrosted),
+            border = settingsCardBorder(isFrosted),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {

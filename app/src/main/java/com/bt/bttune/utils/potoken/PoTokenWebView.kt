@@ -282,7 +282,6 @@ class PoTokenWebView private constructor(
                         "User-Agent" to USER_AGENT,
                         "Accept" to "application/json",
                         "Content-Type" to "application/json+protobuf",
-                        "x-goog-api-key" to GOOGLE_API_KEY,
                         "x-user-agent" to "grpc-web-javascript/0.1",
                     ).toHeaders()
                 )
@@ -331,7 +330,6 @@ class PoTokenWebView private constructor(
 
     companion object {
         private const val TAG = "PoTokenWebView"
-        private val GOOGLE_API_KEY = BuildConfig.GOOGLE_API_KEY
         private const val REQUEST_KEY = "O43z0dpjhgX20SCx4KAo"
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.3"

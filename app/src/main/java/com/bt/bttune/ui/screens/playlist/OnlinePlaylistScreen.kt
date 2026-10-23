@@ -106,11 +106,15 @@ import com.bt.bttune.db.entities.PlaylistEntity
 import com.bt.bttune.db.entities.PlaylistSongMap
 import com.bt.bttune.extensions.toMediaItem
 import com.bt.bttune.extensions.togglePlayPause
+import com.bt.bttune.innertube.YouTube
+import com.bt.bttune.innertube.models.SongItem
+import com.bt.bttune.innertube.utils.completedPlaylistPage
 import com.bt.bttune.models.toMediaMetadata
 import com.bt.bttune.playback.ExoDownloadService
 import com.bt.bttune.playback.queues.ListQueue
 import com.bt.bttune.playback.queues.YouTubeQueue
 import com.bt.bttune.ui.component.DefaultDialog
+import com.bt.bttune.ui.component.DownloadQualityDialog
 import com.bt.bttune.ui.component.DraggableScrollbar
 import com.bt.bttune.ui.component.EmptyPlaceholder
 import com.bt.bttune.ui.component.IconButton
@@ -125,16 +129,18 @@ import com.bt.bttune.ui.theme.PlayerColorExtractor
 import com.bt.bttune.ui.utils.ItemWrapper
 import com.bt.bttune.ui.utils.backToMain
 import com.bt.bttune.ui.utils.resize
+import com.bt.bttune.utils.SpotifyImporter
 import com.bt.bttune.utils.makeTimeString
 import com.bt.bttune.utils.rememberPreference
 import com.bt.bttune.viewmodels.OnlinePlaylistViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @SuppressLint("RememberReturnType")
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun OnlinePlaylistScreen(
     navController: NavController,
@@ -171,6 +177,8 @@ fun OnlinePlaylistScreen(
     var query by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue())
     }
+    var isConvertingToYouTube by remember { mutableStateOf(false) }
+    var convertProgress by remember { mutableStateOf(0 to 0) }
 
     val filteredSongs = remember(songs, query, hideExplicit) {
         var result = songs
@@ -216,6 +224,37 @@ fun OnlinePlaylistScreen(
 
     val downloadUtil = LocalDownloadUtil.current
     var downloadState by remember { mutableStateOf(Download.STATE_STOPPED) }
+    var showQualityDialog by remember { mutableStateOf(false) }
+
+    val exportPlaylistLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")
+        ) { uri ->
+            if (uri != null && playlist != null) {
+                val playlistTitle = playlist!!.title
+                val safeSongs = songs
+                val playlistId = playlist!!.id
+                com.bt.bttune.utils.SaveToStorageUtil.applicationScope.launch(Dispatchers.IO) {
+                    val songsToExport = safeSongs.ifEmpty {
+                        YouTube.playlist(playlistId).completedPlaylistPage().getOrNull()?.songs.orEmpty()
+                    }.map { it.toMediaMetadata() }
+
+                    val result = com.bt.bttune.utils.PlaylistFileHelper.exportPlaylistToUri(
+                        context = context,
+                        uri = uri,
+                        playlistName = playlistTitle,
+                        mediaList = songsToExport
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (result.isSuccess) {
+                            android.widget.Toast.makeText(context, R.string.playlist_exported, android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, result.exceptionOrNull()?.message ?: "Export failed", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
 
     LaunchedEffect(songs) {
         if (songs.isEmpty()) return@LaunchedEffect
@@ -274,6 +313,23 @@ fun OnlinePlaylistScreen(
                     Text(text = stringResource(android.R.string.ok))
                 }
             },
+        )
+    }
+
+    if (isConvertingToYouTube) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Converting Spotify to YouTube") },
+            text = {
+                Column {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { if (convertProgress.second > 0) convertProgress.first.toFloat() / convertProgress.second.toFloat() else 0f },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    )
+                    Text("Matching tracks: ${convertProgress.first} of ${convertProgress.second}")
+                }
+            },
+            confirmButton = {}
         )
     }
 
@@ -722,19 +778,7 @@ fun OnlinePlaylistScreen(
                                                 }
                                             }
                                             else -> {
-                                                songs.forEach { song ->
-                                                    val downloadRequest = DownloadRequest
-                                                        .Builder(song.id, song.id.toUri())
-                                                        .setCustomCacheKey(song.id)
-                                                        .setData(song.title.toByteArray())
-                                                        .build()
-                                                    DownloadService.sendAddDownload(
-                                                        context,
-                                                        ExoDownloadService::class.java,
-                                                        downloadRequest,
-                                                        false,
-                                                    )
-                                                }
+                                                showQualityDialog = true
                                             }
                                         }
                                     },
@@ -770,6 +814,82 @@ fun OnlinePlaylistScreen(
                                                     modifier = Modifier.size(24.dp)
                                                 )
                                             }
+                                        }
+                                    }
+                                }
+                                if (showQualityDialog) {
+                                    DownloadQualityDialog(
+                                        onDismiss = { showQualityDialog = false },
+                                        onQualitySelected = {
+                                            showQualityDialog = false
+                                            songs.forEach { song ->
+                                                val downloadRequest = DownloadRequest
+                                                    .Builder(song.id, song.id.toUri())
+                                                    .setCustomCacheKey(song.id)
+                                                    .setData(song.title.toByteArray())
+                                                    .build()
+                                                DownloadService.sendAddDownload(
+                                                    context,
+                                                    ExoDownloadService::class.java,
+                                                    downloadRequest,
+                                                    false,
+                                                )
+                                            }
+                                        },
+                                    )
+                                }
+
+                                if (viewModel.playlistId.startsWith("sp:")) {
+                                    Surface(
+                                        onClick = {
+                                            if (!isConvertingToYouTube) {
+                                                isConvertingToYouTube = true
+                                                coroutineScope.launch {
+                                                    val spId = viewModel.playlistId.removePrefix("sp:")
+                                                    val targetEntityId = dbPlaylist?.playlist?.id ?: run {
+                                                        val newId = "LP" + java.util.UUID.randomUUID().toString().replace("-", "").take(8)
+                                                        val newEntity = PlaylistEntity(
+                                                            id = newId,
+                                                            name = playlist?.title ?: "Spotify Playlist",
+                                                            browseId = viewModel.playlistId,
+                                                            bookmarkedAt = java.time.LocalDateTime.now(),
+                                                            remoteSongCount = songs.size
+                                                        )
+                                                        database.insert(newEntity)
+                                                        newId
+                                                    }
+
+                                                    val result = SpotifyImporter.convertPlaylistToYouTube(
+                                                        spPlaylistId = spId,
+                                                        targetPlaylistEntityId = targetEntityId,
+                                                        dao = database,
+                                                        onProgress = { cur, max ->
+                                                            convertProgress = cur to max
+                                                        }
+                                                    )
+                                                    isConvertingToYouTube = false
+                                                    result.onSuccess { count ->
+                                                        snackbarHostState.showSnackbar("Converted $count songs to YouTube!")
+                                                    }.onFailure { err ->
+                                                        snackbarHostState.showSnackbar("Conversion failed: ${err.message}")
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.youtube),
+                                                contentDescription = "Convert to YouTube",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -1109,6 +1229,19 @@ fun OnlinePlaylistScreen(
                     }
                 } else if (!isSearching) {
                     IconButton(
+                        onClick = {
+                            val safeName = playlist?.title?.replace(Regex("[\\\\/:*?\"<>|]"), "_")?.trim()?.ifEmpty { "playlist" } ?: "playlist"
+                            exportPlaylistLauncher.launch("$safeName.txt")
+                        },
+                        onLongClick = {}
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.export),
+                            contentDescription = stringResource(R.string.export_playlist)
+                        )
+                    }
+
+                    IconButton(
                         onClick = { isSearching = true },
                         onLongClick = {}
                     ) {
@@ -1121,9 +1254,11 @@ fun OnlinePlaylistScreen(
             }
         )
 
-        PullToRefreshDefaults.Indicator(
+        PullToRefreshDefaults.LoadingIndicator(
             isRefreshing = isRefreshing,
             state = pullRefreshState,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),

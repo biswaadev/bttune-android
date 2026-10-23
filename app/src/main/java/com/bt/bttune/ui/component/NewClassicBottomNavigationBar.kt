@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -113,11 +115,16 @@ fun NewClassicBottomNavigationBar(
                         )
                     }
 
+                    val isFrosted = isFrostedGlassUiEnabled()
                     DropdownMenu(
                         expanded = overflowExpanded,
                         onDismissRequest = { overflowExpanded = false },
                         shape = RoundedCornerShape(24.dp),
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = if (isFrosted) Color(0xFF181818).copy(alpha = 0.90f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.then(
+                            if (isFrosted) Modifier.border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(24.dp))
+                            else Modifier
+                        ),
                         tonalElevation = 6.dp
                     ) {
                         DropdownMenuItem(

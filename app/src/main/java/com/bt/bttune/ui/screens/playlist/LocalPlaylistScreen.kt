@@ -121,6 +121,7 @@ import com.bt.bttune.models.toMediaMetadata
 import com.bt.bttune.playback.ExoDownloadService
 import com.bt.bttune.playback.queues.ListQueue
 import com.bt.bttune.ui.component.DefaultDialog
+import com.bt.bttune.ui.component.DownloadQualityDialog
 import com.bt.bttune.ui.component.DraggableScrollbar
 import com.bt.bttune.ui.component.EmptyPlaceholder
 import com.bt.bttune.ui.component.IconButton
@@ -224,6 +225,30 @@ fun LocalPlaylistScreen(
 
     val downloadUtil = LocalDownloadUtil.current
     var downloadState by remember { mutableStateOf(Download.STATE_STOPPED) }
+    var showQualityDialog by remember { mutableStateOf(false) }
+
+    val exportPlaylistLauncher =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")
+        ) { uri ->
+            if (uri != null && playlist != null) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    val result = com.bt.bttune.utils.PlaylistFileHelper.exportPlaylistToUri(
+                        context = context,
+                        uri = uri,
+                        playlistName = playlist!!.playlist.name,
+                        songs = songs.map { it.song }
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (result.isSuccess) {
+                            android.widget.Toast.makeText(context, R.string.playlist_exported, android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, result.exceptionOrNull()?.message ?: "Export failed", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
 
     val editable: Boolean = playlist?.playlist?.isEditable == true
 
@@ -848,19 +873,7 @@ fun LocalPlaylistScreen(
                                                     }
                                                 }
                                                 else -> {
-                                                    songs.forEach { song ->
-                                                        val downloadRequest = DownloadRequest
-                                                            .Builder(song.song.id, song.song.id.toUri())
-                                                            .setCustomCacheKey(song.song.id)
-                                                            .setData(song.song.song.title.toByteArray())
-                                                            .build()
-                                                        DownloadService.sendAddDownload(
-                                                            context,
-                                                            ExoDownloadService::class.java,
-                                                            downloadRequest,
-                                                            false,
-                                                        )
-                                                    }
+                                                    showQualityDialog = true
                                                 }
                                             }
                                         },
@@ -898,6 +911,27 @@ fun LocalPlaylistScreen(
                                                 }
                                             }
                                         }
+                                    }
+                                    if (showQualityDialog) {
+                                        DownloadQualityDialog(
+                                            onDismiss = { showQualityDialog = false },
+                                            onQualitySelected = {
+                                                showQualityDialog = false
+                                                songs.forEach { song ->
+                                                    val downloadRequest = DownloadRequest
+                                                        .Builder(song.song.id, song.song.id.toUri())
+                                                        .setCustomCacheKey(song.song.id)
+                                                        .setData(song.song.song.title.toByteArray())
+                                                        .build()
+                                                    DownloadService.sendAddDownload(
+                                                        context,
+                                                        ExoDownloadService::class.java,
+                                                        downloadRequest,
+                                                        false,
+                                                    )
+                                                }
+                                            },
+                                        )
                                     }
 
                                     Surface(
@@ -1396,6 +1430,19 @@ fun LocalPlaylistScreen(
                         )
                     }
                 } else if (!isSearching) {
+                    IconButton(
+                        onClick = {
+                            val safeName = playlist?.playlist?.name?.replace(Regex("[\\\\/:*?\"<>|]"), "_")?.trim()?.ifEmpty { "playlist" } ?: "playlist"
+                            exportPlaylistLauncher.launch("$safeName.txt")
+                        },
+                        onLongClick = {}
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.export),
+                            contentDescription = stringResource(R.string.export_playlist)
+                        )
+                    }
+
                     IconButton(
                         onClick = { isSearching = true },
                         onLongClick = {}

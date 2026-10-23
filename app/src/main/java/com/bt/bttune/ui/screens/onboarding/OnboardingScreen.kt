@@ -1,19 +1,45 @@
 package com.bt.bttune.ui.screens.onboarding
 
-import android.app.Activity
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,678 +47,1451 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
+import com.bt.bttune.App
 import com.bt.bttune.R
-import com.bt.bttune.ui.component.AvatarPreferenceManager
-import com.bt.bttune.ui.component.AvatarSelection
+import com.bt.bttune.ui.component.AvatarSelector
 import com.bt.bttune.ui.component.NamePreferenceManager
-import com.bt.bttune.utils.AuthApiClient
-import com.bt.bttune.utils.AuthResult
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
-import com.google.android.gms.common.api.ApiException
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import android.net.Uri
-import java.io.File
+import com.bt.bttune.ui.screens.Screens
+import com.bt.bttune.utils.BTTUNEStatsCloudSync
+import com.bt.bttune.utils.AutoBackupManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import timber.log.Timber
-
-import dev.chrisbanes.haze.haze
-import dev.chrisbanes.haze.hazeChild
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.materials.HazeMaterials
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-
 import kotlinx.coroutines.withContext
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 
-private const val PRIMARY_VIDEO_URL = "https://database.airbeats.net/login_bg_video.mp4"
-private const val FALLBACK_VIDEO_URL = "https://raw.githubusercontent.com/batz-dev/bttune-android/main/assets/login_bg_video.mp4"
-
-enum class SyncState {
-    IDLE,
-    CHECKING,
-    RESTORING,
-    RESTORED,
-    CREATING_BACKUP,
-    NEW_USER
-}
-
-enum class AuthMode {
-    LOGIN, SIGNUP
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalHazeMaterialsApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
     navController: NavController
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val namePrefManager = remember { NamePreferenceManager(context) }
-    val avatarPrefManager = remember { AvatarPreferenceManager(context) }
-    val backupViewModel: com.bt.bttune.viewmodels.BackupRestoreViewModel = androidx.hilt.navigation.compose.hiltViewModel()
-    val authClient = remember { AuthApiClient() }
-    
-    var syncState by remember { mutableStateOf(SyncState.IDLE) }
-    var authMode by remember { mutableStateOf(AuthMode.LOGIN) }
-    var currentUserName by remember { mutableStateOf("") }
-    var currentUserEmail by remember { mutableStateOf("") }
-    var featureStep by remember { mutableStateOf(0) }
-    var isGoogleSignInOpen by remember { mutableStateOf(false) }
+    val pagerState = rememberPagerState(pageCount = { 4 })
+    val coroutineScope = rememberCoroutineScope()
+    val isDark = isSystemInDarkTheme()
 
-    // Input States
-    var emailInput by remember { mutableStateOf("") }
-    var passwordInput by remember { mutableStateOf("") }
-    var nameInput by remember { mutableStateOf("") }
-    var isEmailProcessing by remember { mutableStateOf(false) }
-    var passwordVisible by remember { mutableStateOf(false) }
-
-    BackHandler(enabled = authMode == AuthMode.SIGNUP) {
-        authMode = AuthMode.LOGIN
-    }
-
-    fun generatedAvatarUrl(name: String, email: String): String {
-        val seed = name.takeIf { it.isNotBlank() } ?: email
-        val encodedSeed = URLEncoder.encode(seed, StandardCharsets.UTF_8.toString())
-        return "https://api.dicebear.com/9.x/initials/svg?seed=$encodedSeed&backgroundType=gradientLinear"
-    }
-
-    fun displayNameFromEmail(email: String): String {
-        return email
-            .substringBefore("@")
-            .replace('.', ' ')
-            .replace('_', ' ')
-            .replace('-', ' ')
-            .split(' ')
-            .filter { it.isNotBlank() }
-            .joinToString(" ") { part ->
-                part.replaceFirstChar { char ->
-                    if (char.isLowerCase()) char.titlecase() else char.toString()
-                }
-            }
-            .ifBlank { "Friend" }
-    }
-
-    fun saveProfileAndSync(name: String, email: String, photoUrl: String? = null, isNewSignup: Boolean = false) {
-        coroutineScope.launch {
-            if (!namePrefManager.canUseGoogleEmail(email)) {
-                val lockedEmail = namePrefManager.previousGoogleEmail.first().ifBlank { "your previous email" }
-                isGoogleSignInOpen = false
-                syncState = SyncState.IDLE
-                isEmailProcessing = false
-                Toast.makeText(context, namePrefManager.lockedEmailMessage(lockedEmail), Toast.LENGTH_LONG).show()
-                return@launch
-            }
-
-            currentUserName = name
-            currentUserEmail = email
-            namePrefManager.saveUserName(name)
-            namePrefManager.rememberGoogleLoginEmail(email)
-            if (!photoUrl.isNullOrBlank()) {
-                avatarPrefManager.saveAvatarSelection(
-                    AvatarSelection.Custom(uri = photoUrl, cloudUrl = photoUrl)
-                )
-            } else {
-                avatarPrefManager.saveAvatarSelection(
-                    AvatarSelection.DiceBear(generatedAvatarUrl(name, email))
-                )
-            }
-
-            if (isNewSignup) {
-                // New user sign up -> Skip checking backup, immediately create initial backup!
-                syncState = SyncState.CREATING_BACKUP
-                backupViewModel.backupToDrive(context, email, name)
-                syncState = SyncState.NEW_USER
-            } else {
-                // Existing user login -> Check if backup exists first
-                syncState = SyncState.CHECKING
-                val backupClient = com.bt.bttune.utils.CloudBackupClient()
-                if (backupClient.checkBackupExists(email)) {
-                    syncState = SyncState.RESTORING
-                    when (backupViewModel.restoreFromDrive(context, email)) {
-                        is com.bt.bttune.utils.DriveResult.Success -> {
-                            syncState = SyncState.RESTORED
-                            delay(1500)
-                            context.stopService(android.content.Intent(context, com.bt.bttune.playback.MusicService::class.java))
-                            context.startActivity(
-                                android.content.Intent(context, com.bt.bttune.MainActivity::class.java).apply {
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                                }
-                            )
-                            Runtime.getRuntime().exit(0)
-                        }
-                        else -> {
-                            Toast.makeText(context, "Cloud restore failed. Creating a fresh backup.", Toast.LENGTH_SHORT).show()
-                            syncState = SyncState.CREATING_BACKUP
-                            backupViewModel.backupToDrive(context, email, name)
-                            syncState = SyncState.NEW_USER
-                        }
-                    }
-                } else {
-                    syncState = SyncState.CREATING_BACKUP
-                    backupViewModel.backupToDrive(context, email, name)
-                    syncState = SyncState.NEW_USER
-                }
-            }
-        }
-    }
-
-    fun handleEmailAuth() {
-        if (emailInput.isBlank() || passwordInput.isBlank() || (authMode == AuthMode.SIGNUP && nameInput.isBlank())) {
-            Toast.makeText(context, "Please fill in all required fields", Toast.LENGTH_SHORT).show()
-            return
-        }
-        isEmailProcessing = true
-        coroutineScope.launch {
-            val result = if (authMode == AuthMode.SIGNUP) {
-                authClient.signup(nameInput, emailInput, passwordInput)
-            } else {
-                authClient.login(emailInput, passwordInput)
-            }
-            when (result) {
-                is AuthResult.Success -> {
-                    val displayName = result.user.name.ifBlank { displayNameFromEmail(result.user.email) }
-                    saveProfileAndSync(displayName, result.user.email, photoUrl = null, isNewSignup = (authMode == AuthMode.SIGNUP))
-                }
-                is AuthResult.Error -> {
-                    Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-                    isEmailProcessing = false
-                }
-            }
-        }
-    }
-
-    fun continueToHome() {
-        coroutineScope.launch {
-            syncState = SyncState.IDLE
-            navController.navigate("home") {
-                popUpTo("onboarding") {
-                    inclusive = true
-                }
-            }
-        }
-    }
-
-    fun showSignInError(message: String) {
-        isGoogleSignInOpen = false
-        syncState = SyncState.IDLE
-        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-    }
-
-    fun googleSignInErrorMessage(error: ApiException): String {
-        return when (error.statusCode) {
-            GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> "Google sign in was cancelled."
-            GoogleSignInStatusCodes.SIGN_IN_CURRENTLY_IN_PROGRESS -> "Google sign in is already open."
-            GoogleSignInStatusCodes.SIGN_IN_FAILED -> "Google sign in failed. Check the Android OAuth client package and SHA-1."
-            else -> "Google sign in failed (${error.statusCode}): ${error.message.orEmpty()}"
-        }
-    }
-
-    val googleSignInClient = remember {
-        com.bt.bttune.utils.GoogleAuthManager(context).getSignInClient()
-    }
-
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                .getResult(ApiException::class.java)
-            val email = account.email.orEmpty()
-            if (email.isBlank()) {
-                showSignInError("Google did not return an email for this account.")
-                return@rememberLauncherForActivityResult
-            }
-            val name = account.displayName
-                ?.takeIf { it.isNotBlank() }
-                ?: account.givenName
-                ?: displayNameFromEmail(email)
-
-            isGoogleSignInOpen = false
-            saveProfileAndSync(name, email, account.photoUrl?.toString(), isNewSignup = false)
-        } catch (e: ApiException) {
-            e.printStackTrace()
-            showSignInError(googleSignInErrorMessage(e))
-        } catch (e: Exception) {
-            e.printStackTrace()
-            showSignInError("Google sign in failed: ${e.message}")
-        }
-    }
-
-    val onGoogleSignInClick: () -> Unit = {
-        if (!isGoogleSignInOpen) {
-            isGoogleSignInOpen = true
-            googleSignInClient.revokeAccess().addOnCompleteListener {
-                googleSignInLauncher.launch(googleSignInClient.signInIntent)
-            }
-        }
-    }
-
-    // Video Background Setup — Cached or Remote Stream
-    val cachedVideoFile = remember { File(context.cacheDir, "login_bg_video.mp4") }
-
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            val videoUri = if (cachedVideoFile.exists() && cachedVideoFile.length() > 0) {
-                Uri.fromFile(cachedVideoFile)
-            } else {
-                Uri.parse(PRIMARY_VIDEO_URL)
-            }
-            setMediaItem(MediaItem.fromUri(videoUri))
-            repeatMode = Player.REPEAT_MODE_ALL
-            volume = 0f
-            prepare()
-            playWhenReady = true
-        }
-    }
+    var name by remember { mutableStateOf("") }
+    var isNameLoaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (!cachedVideoFile.exists() || cachedVideoFile.length() == 0L) {
-            withContext(Dispatchers.IO) {
-                var loaded = false
-                try {
-                    val url = java.net.URL(PRIMARY_VIDEO_URL)
-                    val connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.connectTimeout = 8000
-                    connection.readTimeout = 15000
-                    if (connection.responseCode == 200) {
-                        connection.inputStream.use { input ->
-                            cachedVideoFile.outputStream().use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                        loaded = true
-                        withContext(Dispatchers.Main) {
-                            exoPlayer.setMediaItem(MediaItem.fromUri(Uri.fromFile(cachedVideoFile)))
-                            exoPlayer.prepare()
+        val existingName = runCatching { namePrefManager.userName.first() }.getOrDefault("")
+        if (existingName.isNotBlank()) {
+            name = existingName
+        }
+        isNameLoaded = true
+    }
+
+    val isNameValid = name.trim().isNotEmpty() && name.trim().length <= 16
+
+    val bgGradient = if (isDark) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF141320),
+                Color(0xFF0C0B12),
+                Color(0xFF08070D)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFFF3F4FB),
+                Color(0xFFEBEFF8),
+                Color(0xFFE5E9F5)
+            )
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgGradient)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+    ) {
+        BackHandler(enabled = pagerState.currentPage > 0) {
+            coroutineScope.launch {
+                pagerState.animateScrollToPage(pagerState.currentPage - 1)
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Top Bar: Back Button & Step Indicators
+            SetupTopBar(
+                currentPage = pagerState.currentPage,
+                onBack = {
+                    if (pagerState.currentPage > 0) {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
                         }
                     }
-                } catch (e: Exception) {
-                    Timber.d(e, "Primary video URL unreachable, attempting fallback")
                 }
+            )
 
-                if (!loaded) {
-                    try {
-                        val fallbackUrl = java.net.URL(FALLBACK_VIDEO_URL)
-                        val fallbackConn = fallbackUrl.openConnection() as java.net.HttpURLConnection
-                        fallbackConn.connectTimeout = 8000
-                        fallbackConn.readTimeout = 15000
-                        if (fallbackConn.responseCode == 200) {
-                            fallbackConn.inputStream.use { input ->
-                                cachedVideoFile.outputStream().use { output ->
-                                    input.copyTo(output)
+            // Pager Content: Swipe gestures strictly disabled in setup so user advances via buttons
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                userScrollEnabled = false
+            ) { page ->
+                when (page) {
+                    0 -> WelcomeStep(
+                        onNext = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(1)
+                            }
+                        }
+                    )
+                    1 -> ProfileSetupStep(
+                        name = name,
+                        onNameChange = { if (it.length <= 16) name = it },
+                        isNameValid = isNameValid,
+                        onNext = {
+                            val trimmed = name.trim()
+                            if (trimmed.isNotEmpty()) {
+                                coroutineScope.launch {
+                                    namePrefManager.saveUserName(trimmed)
+                                    runCatching {
+                                        BTTUNEStatsCloudSync.syncDaily(
+                                            context = App.instance,
+                                            database = App.instance.database,
+                                            namePreferenceManager = namePrefManager
+                                        )
+                                    }
+                                    pagerState.animateScrollToPage(2)
                                 }
                             }
-                            withContext(Dispatchers.Main) {
-                                exoPlayer.setMediaItem(MediaItem.fromUri(Uri.fromFile(cachedVideoFile)))
-                                exoPlayer.prepare()
+                        }
+                    )
+                    2 -> PermissionsStep(
+                        onNext = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(3)
                             }
                         }
-                    } catch (e: Exception) {
-                        Timber.e(e, "Error caching background video fallback")
-                    }
+                    )
+                    3 -> BackupScanStep(
+                        navController = navController,
+                        onSkip = {
+                            AutoBackupManager.markSetupCompleted(context)
+                            navController.navigate(Screens.Home.route) {
+                                popUpTo("onboarding") { inclusive = true }
+                            }
+                        }
+                    )
                 }
             }
         }
     }
+}
 
-    DisposableEffect(Unit) {
-        onDispose { exoPlayer.release() }
-    }
+@Composable
+private fun SetupTopBar(
+    currentPage: Int,
+    onBack: () -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val isDark = isSystemInDarkTheme()
 
-    val hazeState = remember { HazeState() }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        // True Fullscreen Video Background using TextureView for Haze capture
-        AndroidView(
-            modifier = Modifier
-                .fillMaxSize()
-                .haze(hazeState),
-            factory = { ctx ->
-                android.view.TextureView(ctx).apply {
-                    layoutParams = android.view.ViewGroup.LayoutParams(
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Box(
+            modifier = Modifier.size(40.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (currentPage > 0) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
-                    exoPlayer.setVideoTextureView(this)
                 }
             }
-        )
+        }
 
-        // Top Back Button when in Signup mode or when opened from navigation
-        IconButton(
-            onClick = {
-                if (authMode == AuthMode.SIGNUP) {
-                    authMode = AuthMode.LOGIN
-                } else {
-                    if (!navController.popBackStack()) {
-                        navController.navigate("home")
-                    }
-                }
-            },
-            modifier = Modifier
-                .statusBarsPadding()
-                .padding(16.dp)
-                .align(Alignment.TopStart)
+        // Stepper Pills
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                painter = painterResource(R.drawable.arrow_back),
-                contentDescription = "Back",
-                tint = Color.White
+            repeat(4) { index ->
+                val isActive = index == currentPage
+                val isCompleted = index < currentPage
+                val pillWidth by animateDpAsState(
+                    targetValue = if (isActive) 26.dp else 8.dp,
+                    animationSpec = tween(durationMillis = 250),
+                    label = "pill_width"
+                )
+                val pillColor by animateColorAsState(
+                    targetValue = when {
+                        isActive -> primaryColor
+                        isCompleted -> primaryColor.copy(alpha = 0.5f)
+                        else -> if (isDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.15f)
+                    },
+                    animationSpec = tween(durationMillis = 250),
+                    label = "pill_color"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .height(8.dp)
+                        .width(pillWidth)
+                        .clip(CircleShape)
+                        .background(pillColor)
+                )
+            }
+        }
+
+        Text(
+            text = "${currentPage + 1}/4",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun WelcomeStep(
+    onNext: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val cardBg = if (isDark) Color(0xFF171622) else Color(0xFFFFFFFF)
+    val cardBorder = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(scrollState),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Hero Badge
+            Box(
+                modifier = Modifier
+                    .size(92.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                primaryColor.copy(alpha = 0.28f),
+                                primaryColor.copy(alpha = 0.08f)
+                            )
+                        )
+                    )
+                    .border(2.dp, primaryColor.copy(alpha = 0.45f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.airbeats_monochrome),
+                    contentDescription = null,
+                    tint = primaryColor,
+                    modifier = Modifier.size(52.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Welcome to BTTUNE",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface,
+                letterSpacing = (-0.5).sp
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Your private sanctuary for pure, high-fidelity music streaming and offline listening.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Feature Highlights Cards
+            FeatureCard(
+                iconRes = R.drawable.headphones,
+                title = "Lossless Audio Streaming",
+                subtitle = "Enjoy pristine audio quality with dynamic stream caching and zero intrusive ads.",
+                cardBg = cardBg,
+                cardBorder = cardBorder
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            FeatureCard(
+                iconRes = R.drawable.mic,
+                title = "Music Recognition",
+                subtitle = "Instantly identify songs playing around you with the built-in Shazam recognition engine.",
+                cardBg = cardBg,
+                cardBorder = cardBorder
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            FeatureCard(
+                iconRes = R.drawable.backup,
+                title = "Safe Local Backups",
+                subtitle = "Keep your playlists, history, and stats securely preserved on your device.",
+                cardBg = cardBg,
+                cardBorder = cardBorder
             )
         }
 
-        // Liquid Glassmorphism Frosted Card — Lowered for top character spacing
-        Box(
+        Column(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(if (authMode == AuthMode.SIGNUP) 0.74f else 0.67f)
-                .clip(RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp))
-                .hazeChild(
-                    state = hazeState,
-                    style = HazeMaterials.ultraThin()
-                )
-                .background(
-                    Color.Black.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
-                )
-                .border(
-                    width = 1.dp,
-                    brush = Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.35f),
-                            Color.White.copy(alpha = 0.08f)
-                        )
-                    ),
-                    shape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
-                )
+                .padding(vertical = 20.dp)
         ) {
-            val scrollState = rememberScrollState()
-            Crossfade(targetState = syncState, label = "OnboardingState") { state ->
+            ExpressivePrimaryButton(
+                text = "Get Started",
+                onClick = onNext
+            )
+        }
+    }
+}
+
+@Composable
+private fun FeatureCard(
+    iconRes: Int,
+    title: String,
+    subtitle: String,
+    cardBg: Color,
+    cardBorder: Color
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        border = BorderStroke(1.dp, cardBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(primaryColor.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    tint = primaryColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileSetupStep(
+    name: String,
+    onNameChange: (String) -> Unit,
+    isNameValid: Boolean,
+    onNext: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val cardBg = if (isDark) Color(0xFF171622) else Color(0xFFFFFFFF)
+    val cardBorder = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+    val inputBg = if (isDark) Color(0xFF222131) else Color(0xFFEFF1F8)
+    val scrollState = rememberScrollState()
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(scrollState),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Set Up Your Profile",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Choose your avatar and display name. This identity is universal across BTTUNE and Global Stats.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Avatar Section Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = BorderStroke(1.dp, cardBorder)
+            ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                        .padding(horizontal = 24.dp, vertical = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    when (state) {
-                        SyncState.IDLE -> {
+                    AvatarSelector()
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Name Input
+            OutlinedTextField(
+                value = name,
+                onValueChange = onNameChange,
+                label = {
+                    Text(
+                        text = "What should we call you?",
+                        color = if (name.isNotEmpty()) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                placeholder = {
+                    Text(
+                        text = "Enter your nickname...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = if (name.isNotEmpty()) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = {
+                    if (name.isNotEmpty()) {
+                        IconButton(onClick = { onNameChange("") }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedContainerColor = inputBg,
+                    unfocusedContainerColor = inputBg,
+                    focusedBorderColor = primaryColor,
+                    unfocusedBorderColor = primaryColor.copy(alpha = 0.4f),
+                    cursorColor = primaryColor
+                ),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Words,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (isNameValid) {
+                            keyboardController?.hide()
+                            onNext()
+                        }
+                    }
+                )
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, end = 4.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = "${name.length} / 16",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 20.dp)
+        ) {
+            ExpressivePrimaryButton(
+                text = "Continue",
+                onClick = {
+                    keyboardController?.hide()
+                    onNext()
+                },
+                enabled = isNameValid
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionsStep(
+    onNext: () -> Unit
+) {
+    val context = LocalContext.current
+    val isDark = isSystemInDarkTheme()
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val cardBg = if (isDark) Color(0xFF171622) else Color(0xFFFFFFFF)
+    val cardBorder = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+    val scrollState = rememberScrollState()
+
+    var hasNotificationPermission by remember { mutableStateOf(isNotificationPermissionGranted(context)) }
+    var hasStoragePermission by remember { mutableStateOf(AutoBackupManager.hasStoragePermission(context)) }
+    var hasMicPermission by remember { mutableStateOf(isMicPermissionGranted(context)) }
+    var hasBluetoothPermission by remember { mutableStateOf(isBluetoothPermissionGranted(context)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasNotificationPermission = isNotificationPermissionGranted(context)
+                hasStoragePermission = AutoBackupManager.hasStoragePermission(context)
+                hasMicPermission = isMicPermissionGranted(context)
+                hasBluetoothPermission = isBluetoothPermissionGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { hasNotificationPermission = isNotificationPermissionGranted(context) }
+
+    val storageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { hasStoragePermission = AutoBackupManager.hasStoragePermission(context) }
+
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { hasMicPermission = isMicPermissionGranted(context) }
+
+    val bluetoothLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { hasBluetoothPermission = isBluetoothPermissionGranted(context) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp)
+            .verticalScroll(scrollState),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "App Permissions",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "BTTUNE requests a few permissions to power music playback and recognition. All permissions are optional.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = 10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Permission 1: Notifications
+            PermissionCard(
+                iconRes = R.drawable.notification,
+                title = "Notifications & Controls",
+                description = "Shows media controls in notification center and lock screen.",
+                isGranted = hasNotificationPermission,
+                onGrant = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+                cardBg = cardBg,
+                cardBorder = cardBorder
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Permission 2: Full Storage & Backup Access (NO audio/video prompt)
+            PermissionCard(
+                iconRes = R.drawable.folder,
+                title = "Full Storage & Backup Access",
+                description = "Grants direct storage access to discover offline music and automatically restore backups without opening files.",
+                isGranted = hasStoragePermission,
+                onGrant = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        AutoBackupManager.requestStoragePermission(context)
+                    } else {
+                        storageLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                },
+                cardBg = cardBg,
+                cardBorder = cardBorder
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Permission 3: Microphone (Shazam)
+            PermissionCard(
+                iconRes = R.drawable.mic,
+                title = "Audio Recognition",
+                description = "Used only when you tap the mic to identify music playing nearby.",
+                isGranted = hasMicPermission,
+                onGrant = {
+                    micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                },
+                cardBg = cardBg,
+                cardBorder = cardBorder
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Permission 4: Bluetooth
+            PermissionCard(
+                iconRes = R.drawable.ic_bluetooth,
+                title = "Bluetooth Devices",
+                description = "Displays connected wireless headphone names and battery status.",
+                isGranted = hasBluetoothPermission,
+                onGrant = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        bluetoothLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                    }
+                },
+                cardBg = cardBg,
+                cardBorder = cardBorder
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "You can grant or change these anytime in Android App Settings.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 20.dp)
+        ) {
+            ExpressivePrimaryButton(
+                text = "Continue",
+                onClick = onNext
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionCard(
+    iconRes: Int,
+    title: String,
+    description: String,
+    isGranted: Boolean,
+    onGrant: () -> Unit,
+    cardBg: Color,
+    cardBorder: Color
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        border = BorderStroke(1.dp, cardBorder)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(primaryColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    tint = primaryColor,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 15.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            if (isGranted) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF10B981).copy(alpha = 0.16f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Granted",
+                            color = Color(0xFF10B981),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else {
+                FilledTonalButton(
+                    onClick = onGrant,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Allow",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupScanStep(
+    navController: NavController,
+    onSkip: () -> Unit
+) {
+    val context = LocalContext.current
+    val isDark = isSystemInDarkTheme()
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val cardBg = if (isDark) Color(0xFF171622) else Color(0xFFFFFFFF)
+    val cardBorder = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+    val coroutineScope = rememberCoroutineScope()
+
+    var isScanning by remember { mutableStateOf(true) }
+    var discoveredBackupFile by remember { mutableStateOf<File?>(null) }
+    var isRestoring by remember { mutableStateOf(false) }
+    var restoreStatusText by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        isScanning = true
+        kotlinx.coroutines.delay(1200)
+        discoveredBackupFile = withContext(Dispatchers.IO) {
+            AutoBackupManager.findStorageBackupFile(context)
+        }
+        isScanning = false
+    }
+
+    val manualRestoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            isRestoring = true
+            restoreStatusText = "Restoring backup..."
+            coroutineScope.launch {
+                val success = withContext(Dispatchers.IO) {
+                    AutoBackupManager.restoreFromUri(context, uri, shouldRestart = true)
+                }
+                if (!success) {
+                    isRestoring = false
+                    restoreStatusText = null
+                    Toast.makeText(context, "Failed to restore backup", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    val attemptRestore = {
+        isRestoring = true
+        restoreStatusText = "Restoring backup..."
+        coroutineScope.launch {
+            val success = withContext(Dispatchers.IO) {
+                AutoBackupManager.restoreFromStorageBackup(context, shouldRestart = true)
+            }
+            if (!success) {
+                isRestoring = false
+                restoreStatusText = null
+                Toast.makeText(
+                    context,
+                    "Failed to restore backup directly. You can use 'Restore Manually'.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            attemptRestore()
+        } else {
+            Toast.makeText(
+                context,
+                "Storage permission required to auto-restore. You can use 'Restore Manually'.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Setting Up BTTUNE",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Checking storage for previous backups to restore your library and preferences.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = 10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(36.dp))
+
+            when {
+                isRestoring -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                        border = BorderStroke(1.dp, cardBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            LoadingIndicator(
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
                             Text(
-                                text = if (authMode == AuthMode.SIGNUP) "Get Started Free" else "Welcome Back",
-                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White
+                                text = restoreStatusText ?: "Restoring backup...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Preserving your new username and avatar...",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                isScanning -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                        border = BorderStroke(1.dp, cardBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(36.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            LoadingIndicator(
+                                modifier = Modifier.size(44.dp)
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Text(
+                                text = "Scanning Documents & Downloads...",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                            text = if (authMode == AuthMode.SIGNUP) "Free Forever. No Ads, No Subscription" else "Welcome back we missed you",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.7f),
-                                textAlign = TextAlign.Center
+                                text = "Looking for existing BTTUNE backups",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                    }
+                }
+
+                discoveredBackupFile != null -> {
+                    val file = discoveredBackupFile!!
+                    val fileSizeFormatted = formatFileSize(file.length())
+                    val fileDateFormatted = formatFileDate(file.lastModified())
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                        border = BorderStroke(1.5.dp, primaryColor.copy(alpha = 0.5f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(primaryColor.copy(alpha = 0.16f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.backup),
+                                    contentDescription = null,
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
+
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            val textFieldColors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.White.copy(alpha = 0.5f),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                                focusedContainerColor = Color.White.copy(alpha = 0.12f),
-                                unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = Color.White
+                            Text(
+                                text = "Backup Found!",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
 
-                            if (authMode == AuthMode.SIGNUP) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                                    Text("Your name", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                                    OutlinedTextField(
-                                        value = nameInput,
-                                        onValueChange = { nameInput = it },
-                                        placeholder = { Text("@yourname", color = Color.White.copy(alpha = 0.5f)) },
-                                        leadingIcon = { Icon(painterResource(R.drawable.person), contentDescription = null, tint = Color.White.copy(alpha = 0.5f)) },
-                                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                                        singleLine = true,
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = textFieldColors
-                                    )
-                                }
-                            }
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                                Text(if (authMode == AuthMode.SIGNUP) "Email address" else "Username / Email", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                                OutlinedTextField(
-                                    value = emailInput,
-                                    onValueChange = { emailInput = it },
-                                    placeholder = { Text("yourname@gmail.com", color = Color.White.copy(alpha = 0.5f)) },
-                                    leadingIcon = { Icon(painterResource(if (authMode == AuthMode.SIGNUP) R.drawable.email else R.drawable.person), contentDescription = null, tint = Color.White.copy(alpha = 0.5f)) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = textFieldColors
-                                )
-                            }
-
-                            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                                Text("Password", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp, start = 4.dp))
-                                OutlinedTextField(
-                                    value = passwordInput,
-                                    onValueChange = { passwordInput = it },
-                                    placeholder = { Text("••••••••", color = Color.White.copy(alpha = 0.5f)) },
-                                    leadingIcon = { Icon(painterResource(R.drawable.lock), contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(20.dp)) },
-                                    trailingIcon = {
-                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                            Icon(painterResource(if (passwordVisible) R.drawable.visibility else R.drawable.visibility_off), contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(20.dp))
-                                        }
-                                    },
-                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = textFieldColors
-                                )
-                            }
-
-                            if (authMode == AuthMode.LOGIN) {
-                                Text(
-                                    text = "Forgot Password?",
-                                    color = Color.White.copy(alpha = 0.7f),
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.align(Alignment.End).padding(bottom = 14.dp).clickable { }
-                                )
-                            } else {
-                                Spacer(modifier = Modifier.height(14.dp))
-                            }
-
-                            // Gradient Action Button
-                            val gradientBrush = Brush.horizontalGradient(
-                                colors = listOf(Color(0xFFC084FC), Color(0xFFF472B6), Color(0xFFFB923C))
+                            Text(
+                                text = "An existing BTTUNE backup was located on your device. Restore your library, playlists, and settings now?",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp
                             )
-                            Button(
-                                onClick = { handleEmailAuth() },
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // File Info Pill
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(48.dp)
-                                    .background(brush = gradientBrush, shape = RoundedCornerShape(24.dp)),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                                contentPadding = PaddingValues(),
-                                enabled = !isEmailProcessing
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(if (isDark) Color(0xFF201F2D) else Color(0xFFEEF0F8))
+                                    .padding(12.dp),
+                                horizontalAlignment = Alignment.Start
                             ) {
-                                if (isEmailProcessing) {
-                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                                } else {
-                                    Text(if (authMode == AuthMode.SIGNUP) "Sign up" else "Login", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Or continue with divider
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                HorizontalDivider(modifier = Modifier.weight(1f), color = Color.White.copy(alpha = 0.2f))
                                 Text(
-                                    text = if (authMode == AuthMode.SIGNUP) " Or sign up with " else " Or continue with ",
-                                    color = Color.White.copy(alpha = 0.5f),
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                    text = file.name,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                HorizontalDivider(modifier = Modifier.weight(1f), color = Color.White.copy(alpha = 0.2f))
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "$fileSizeFormatted • $fileDateFormatted",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
+                        }
+                    }
+                }
 
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Social Icons & Google Sign-In Row
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                val socialModifier = Modifier
-                                    .size(44.dp)
-                                    .background(Color.White.copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp))
-                                    .padding(10.dp)
-                                
-                                Box(modifier = socialModifier.clickable { onGoogleSignInClick() }, contentAlignment = Alignment.Center) {
-                                    Icon(painterResource(R.drawable.google), contentDescription = "Google", tint = Color.Unspecified)
-                                }
-                                Box(modifier = socialModifier.clickable { }, contentAlignment = Alignment.Center) {
-                                    Icon(painterResource(R.drawable.facebook), contentDescription = "Facebook", tint = Color(0xFF1877F2))
-                                }
-                                Box(modifier = socialModifier.clickable { }, contentAlignment = Alignment.Center) {
-                                    Icon(painterResource(R.drawable.github), contentDescription = "Github", tint = Color.White)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(24.dp))
-                            
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                else -> {
+                    // No Backup Found Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                        border = BorderStroke(1.dp, cardBorder)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                TextButton(onClick = { navController.navigate("guest_profile_setup") }) {
-                                    Text("Continue as Guest", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
-                                }
-                                TextButton(onClick = { authMode = if (authMode == AuthMode.LOGIN) AuthMode.SIGNUP else AuthMode.LOGIN }) {
-                                    Text(
-                                        text = if (authMode == AuthMode.LOGIN) "Sign up" else "Login",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                }
+                                Icon(
+                                    painter = painterResource(R.drawable.folder),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(30.dp)
+                                )
                             }
-                        }
 
-                        SyncState.CHECKING -> {
-                            CircularProgressIndicator(color = Color(0xFFA259FF), modifier = Modifier.padding(bottom = 24.dp))
-                            Text(
-                                text = "Looking for your cloud backup...",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center
-                            )
-                            Text(stringResource(R.string.please_wait), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
-                        }
+                            Spacer(modifier = Modifier.height(16.dp))
 
-                        SyncState.RESTORING -> {
-                            CircularProgressIndicator(color = Color(0xFFA259FF), modifier = Modifier.padding(bottom = 24.dp))
                             Text(
-                                text = "Restoring your cloud backup...",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center
+                                text = "No Backup Found",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                            Text(stringResource(R.string.please_wait), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
-                        }
 
-                        SyncState.RESTORED -> {
-                            Icon(painter = painterResource(R.drawable.check_circle), contentDescription = "Success", tint = Color(0xFFA259FF), modifier = Modifier.size(64.dp).padding(bottom = 16.dp))
-                            Text(
-                                text = "Hi $currentUserName,",
-                                color = Color.White,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                            Text(
-                                text = "Welcome again back to BTTUNE",
-                                color = Color.LightGray,
-                                fontSize = 16.sp,
-                                textAlign = TextAlign.Center
-                            )
-                        }
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                        SyncState.CREATING_BACKUP -> {
-                            CircularProgressIndicator(color = Color(0xFFA259FF), modifier = Modifier.padding(bottom = 24.dp))
                             Text(
-                                text = "Creating your cloud backup...",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center
-                            )
-                            Text(stringResource(R.string.uploading_first_backup), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
-                        }
-
-                        SyncState.NEW_USER -> {
-                            val featureTitles = listOf("Discover Music", "Create Playlists", "Offline Mode")
-                            val featureDesc = listOf("Find millions of songs matching your mood.", "Curate your perfect listening experience.", "Download your favorites and listen anywhere.")
-                            
-                            Text(
-                                text = if (featureStep == 0) "Hi $currentUserName, welcome!" else featureTitles[featureStep - 1],
-                                color = Color.White,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
+                                text = "No previous backups were detected in Documents or Downloads. You can restore a file manually or start fresh.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(bottom = 8.dp)
+                                lineHeight = 18.sp
                             )
-                            Text(
-                                text = if (featureStep == 0) "Looking like you are new to BTTUNE" else featureDesc[featureStep - 1],
-                                color = Color.LightGray,
-                                fontSize = 16.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(bottom = 32.dp)
-                            )
-                            Button(
-                                onClick = {
-                                    if (featureStep < featureTitles.size) featureStep++ else continueToHome()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA259FF)),
-                                shape = RoundedCornerShape(24.dp),
-                                modifier = Modifier.fillMaxWidth().height(52.dp)
-                            ) {
-                                Text(if (featureStep == featureTitles.size) "Get Started" else "Next", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            }
                         }
                     }
                 }
             }
         }
+
+        // Bottom Actions
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 20.dp)
+        ) {
+            when {
+                isRestoring || isScanning -> {
+                    // Actions disabled while scanning or restoring
+                }
+
+                discoveredBackupFile != null -> {
+                    ExpressivePrimaryButton(
+                        text = "Restore Backup",
+                        iconPainter = painterResource(R.drawable.backup),
+                        onClick = {
+                            if (!AutoBackupManager.hasStoragePermission(context)) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    AutoBackupManager.requestStoragePermission(context)
+                                } else {
+                                    storagePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                                }
+                                Toast.makeText(
+                                    context,
+                                    "Please grant storage access to restore automatically",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                attemptRestore()
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    ExpressiveTonalButton(
+                        text = "Restore Manually",
+                        icon = painterResource(R.drawable.restore),
+                        onClick = {
+                            manualRestoreLauncher.launch(arrayOf("*/*"))
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    ExpressiveOutlinedButton(
+                        text = "Cancel & Set Up as New",
+                        onClick = onSkip
+                    )
+                }
+
+                else -> {
+                    // No Backup Found actions
+                    ExpressiveTonalButton(
+                        text = "Restore Manually",
+                        icon = painterResource(R.drawable.restore),
+                        onClick = {
+                            manualRestoreLauncher.launch(arrayOf("*/*"))
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    ExpressivePrimaryButton(
+                        text = "Skip & Get Started",
+                        onClick = onSkip
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun isNotificationPermissionGranted(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+}
+
+private fun isAudioPermissionGranted(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+    } else {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+    }
+}
+
+private fun isMicPermissionGranted(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun isBluetoothPermissionGranted(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.lastIndex)
+    return String.format(Locale.US, "%.1f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+}
+
+private fun formatFileDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+
+@Composable
+private fun ExpressivePrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: ImageVector? = Icons.AutoMirrored.Filled.ArrowForward,
+    iconPainter: Painter? = null,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    contentColor: Color = Color.White
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring<Float>(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "btn_scale"
+    )
+
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .shadow(
+                elevation = if (enabled) 10.dp else 0.dp,
+                shape = RoundedCornerShape(28.dp),
+                ambientColor = containerColor.copy(alpha = 0.4f),
+                spotColor = containerColor.copy(alpha = 0.5f)
+            )
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        shape = RoundedCornerShape(28.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = containerColor.copy(alpha = 0.35f),
+            disabledContentColor = contentColor.copy(alpha = 0.6f)
+        ),
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 8.dp,
+            pressedElevation = 2.dp
+        ),
+        contentPadding = PaddingValues(horizontal = 24.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = text,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.3.sp
+            )
+            if (iconPainter != null) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Icon(
+                    painter = iconPainter,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else if (icon != null) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpressiveTonalButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: Painter? = null
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring<Float>(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "tonal_scale"
+    )
+
+    FilledTonalButton(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        shape = RoundedCornerShape(26.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (icon != null) {
+                Icon(
+                    painter = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = text,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExpressiveOutlinedButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring<Float>(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "outline_scale"
+    )
+
+    OutlinedButton(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        shape = RoundedCornerShape(26.dp),
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+        contentPadding = PaddingValues(horizontal = 20.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

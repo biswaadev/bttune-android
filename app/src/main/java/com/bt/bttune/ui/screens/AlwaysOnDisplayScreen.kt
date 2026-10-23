@@ -15,6 +15,7 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Build
+import android.view.WindowManager
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -117,6 +118,7 @@ import com.bt.bttune.constants.AodFullscreenKey
 import com.bt.bttune.constants.AodShowArtistKey
 import com.bt.bttune.constants.AodShowControlsKey
 import com.bt.bttune.constants.AodShowProgressKey
+import com.bt.bttune.constants.FullScreenModeKey
 import com.bt.bttune.constants.AodShowTimeKey
 import com.bt.bttune.constants.AodShowTitleKey
 import com.bt.bttune.constants.AodStyle
@@ -191,7 +193,6 @@ private data class AodMediaState(
     val artist: String,
 )
 
-@RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun AlwaysOnDisplayScreen(navController: NavController) {
     val playerConnection = LocalPlayerConnection.current ?: run {
@@ -206,13 +207,25 @@ fun AlwaysOnDisplayScreen(navController: NavController) {
     val window = dialogWindow ?: activity?.window
 
     val (fullscreenMode) = rememberPreference(AodFullscreenKey, true)
+    val (fullScreenMode) = rememberPreference(FullScreenModeKey, false)
 
-    DisposableEffect(Unit, fullscreenMode) {
+    DisposableEffect(Unit, fullscreenMode, fullScreenMode) {
         view.keepScreenOn = true
 
-        if (fullscreenMode && window != null) {
+        if ((fullscreenMode || fullScreenMode) && window != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
             WindowCompat.setDecorFitsSystemWindows(window, false)
-            val insetsController = WindowInsetsControllerCompat(window, view)
+            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
             insetsController.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
@@ -220,8 +233,8 @@ fun AlwaysOnDisplayScreen(navController: NavController) {
 
         onDispose {
             view.keepScreenOn = false
-            if (window != null) {
-                val insetsController = WindowInsetsControllerCompat(window, view)
+            if (window != null && !fullScreenMode) {
+                val insetsController = WindowCompat.getInsetsController(window, window.decorView)
                 insetsController.show(WindowInsetsCompat.Type.systemBars())
             }
         }

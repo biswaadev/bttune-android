@@ -13,15 +13,20 @@ import com.bt.bttune.db.entities.PlaylistEntity
 import com.bt.bttune.db.entities.PlaylistSongMap
 import com.bt.bttune.db.entities.SongEntity
 import com.bt.bttune.models.toMediaMetadata
+import android.content.Context
+import com.bt.bttune.constants.SpotifyCookieKey
+import com.bt.bttune.spotify.Spotify
+import com.bt.bttune.spotify.SpotifyAuth
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import java.time.LocalDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
 
-
 @Singleton
 class SyncUtils @Inject constructor(
+    @ApplicationContext val context: Context,
     val database: MusicDatabase,
 ) {
     suspend fun syncLikedSongs() {
@@ -168,6 +173,51 @@ class SyncUtils @Inject constructor(
                         setVideoId = song.setVideoId
                     )
                 }.forEach(::insert)
+        }
+    }
+
+    suspend fun syncSpotifyPlaylists() {
+        val spDc = context.dataStore.data.first()[SpotifyCookieKey]
+        if (spDc.isNullOrBlank()) return
+
+        val cleanSpDc = if (spDc.startsWith("sp_dc=")) spDc.substringAfter("sp_dc=").substringBefore(";") else spDc
+        if (Spotify.accessToken.isNullOrBlank()) {
+            SpotifyAuth.fetchAccessToken(cleanSpDc).onSuccess { token ->
+                Spotify.accessToken = token.accessToken
+            }.onFailure {
+                reportException(it)
+                return
+            }
+        }
+
+        Spotify.myPlaylists(limit = 50).onSuccess { paging ->
+            val dbPlaylists = database.playlistsByNameAsc().first()
+            paging.items.forEach { spPlaylist ->
+                val browseId = "sp:${spPlaylist.id}"
+                val count = spPlaylist.tracks?.total ?: 0
+                val existing = dbPlaylists.find { it.playlist.browseId == browseId }?.playlist
+
+                if (existing == null) {
+                    val entity = PlaylistEntity(
+                        id = "sp_${spPlaylist.id}",
+                        name = spPlaylist.name,
+                        browseId = browseId,
+                        isEditable = false,
+                        bookmarkedAt = LocalDateTime.now(),
+                        remoteSongCount = count
+                    )
+                    database.insert(entity)
+                } else {
+                    database.update(
+                        existing.copy(
+                            name = spPlaylist.name,
+                            remoteSongCount = count
+                        )
+                    )
+                }
+            }
+        }.onFailure {
+            reportException(it)
         }
     }
 }

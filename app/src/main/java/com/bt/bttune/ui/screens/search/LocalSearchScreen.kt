@@ -80,11 +80,14 @@ fun LocalSearchScreen(
         viewModel.query.value = query
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(if (pureBlack) Color.Black else MaterialTheme.colorScheme.background)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        com.bt.bttune.ui.component.ScreenAdaptiveBackground(
+            artworkUrl = mediaMetadata?.thumbnailUrl
+        )
+
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
         Surface(
             color = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surface,
             tonalElevation = if (pureBlack) 0.dp else 0.dp,
@@ -290,6 +293,7 @@ fun LocalSearchScreen(
                 }
             }
         }
+    }
     }
 }
 

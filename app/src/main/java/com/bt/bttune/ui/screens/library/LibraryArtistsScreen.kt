@@ -27,6 +27,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,9 +57,11 @@ import com.bt.bttune.constants.GridThumbnailHeight
 import com.bt.bttune.constants.LibraryViewType
 import com.bt.bttune.constants.YtmSyncKey
 import com.bt.bttune.ui.component.ChipsRow
+import com.bt.bttune.ui.component.CreatePlaylistDialog
 import com.bt.bttune.ui.component.EmptyPlaceholder
 import com.bt.bttune.ui.component.LibraryArtistGridItem
 import com.bt.bttune.ui.component.LibraryArtistListItem
+import com.bt.bttune.ui.component.LibraryFloatingActions
 import com.bt.bttune.ui.component.LocalMenuState
 import com.bt.bttune.ui.component.SortHeader
 import com.bt.bttune.utils.rememberEnumPreference
@@ -89,11 +93,21 @@ fun LibraryArtistsScreen(
 
     val filterContent = @Composable {
         Row {
-            Spacer(Modifier.width(12.dp))
+            val isFrosted = com.bt.bttune.ui.component.isFrostedGlassUiEnabled()
             FilterChip(
                 label = { Text(stringResource(R.string.artists)) },
                 selected = true,
-                colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = if (isFrosted) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
+                    selectedContainerColor = if (isFrosted) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surface,
+                    labelColor = MaterialTheme.colorScheme.onSurface,
+                    selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                border = if (isFrosted) {
+                    androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f))
+                } else {
+                    FilterChipDefaults.filterChipBorder(enabled = true, selected = true)
+                },
                 onClick = onDeselect,
                 shape = RoundedCornerShape(16.dp),
                 leadingIcon = {
@@ -115,16 +129,10 @@ fun LibraryArtistsScreen(
         }
     }
 
-    LaunchedEffect(filter) {
-        if (ytmSync && filter == ArtistFilter.LIKED) {
-            withContext(Dispatchers.IO) {
-                viewModel.sync()
-            }
-        }
-    }
 
     val artists by viewModel.allArtists.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
 
     val lazyListState = rememberLazyListState()
     val lazyGridState = rememberLazyGridState()
@@ -292,5 +300,20 @@ fun LibraryArtistsScreen(
                     }
                 }
         }
+
+        LibraryFloatingActions(
+            lazyListState = lazyListState,
+            lazyGridState = lazyGridState,
+            onOpenGenerator = {
+                navController.navigate("generator")
+            },
+            onCreatePlaylist = {
+                showCreatePlaylistDialog = true
+            },
+        )
+    }
+
+    if (showCreatePlaylistDialog) {
+        CreatePlaylistDialog(onDismiss = { showCreatePlaylistDialog = false })
     }
 }

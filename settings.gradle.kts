@@ -15,7 +15,7 @@ plugins {
 }
 
 
-rootProject.name = "AirBeats"
+rootProject.name = "BTTUNE"
 include(":app")
 include(":innertube")
 include(":kugou")
@@ -25,6 +25,4 @@ include(":material-color-utilities")
 include(":jossredconnect")
 include(":betterlyrics")
 include(":shazamkit")
-
-include(":shazamkit")
-
+include(":spotify")

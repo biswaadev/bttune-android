@@ -44,16 +44,14 @@ fun CreatePlaylistDialog(
         onDismiss = onDismiss,
         onDone = { playlistName ->
             coroutineScope.launch(Dispatchers.IO) {
-                val browseIdResult = if (syncedPlaylist) {
+                val browseId = if (syncedPlaylist) {
                     YouTube.createPlaylist(playlistName).getOrNull()
-                } else {
-                    null
-                }
+                } else null
                 database.query {
                     insert(
                         PlaylistEntity(
                             name = playlistName,
-                            browseId = browseIdResult,
+                            browseId = browseId,
                             bookmarkedAt = LocalDateTime.now(),
                             isEditable = true,
                         )

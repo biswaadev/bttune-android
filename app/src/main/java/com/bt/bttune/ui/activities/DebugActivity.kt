@@ -68,6 +68,11 @@ class DebugActivity : ComponentActivity() {
         val reportText = buildCrashReport(this, timestampText, stack)
         val deviceInfo = buildDeviceInfo(this)
 
+        // Automatically dispatch fatal crash report to Telegram Crash Topic via Worker when crash screen is shown
+        runCatching {
+            com.bt.bttune.utils.BTTUNECrashReporter.sendCrashFromDebugScreen(stack)
+        }
+
         setContent {
             BTTUNETheme(
                 darkTheme = true

@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -57,6 +60,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.bt.bttune.LocalPlayerAwareWindowInsets
 import com.bt.bttune.R
 import com.bt.bttune.ui.component.IconButton
 import com.bt.bttune.ui.utils.backToMain
@@ -95,6 +99,9 @@ fun DebugSettings(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .windowInsetsPadding(
+                    LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Bottom)
+                )
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -112,16 +119,29 @@ private fun LogViewerPanel() {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
-    var filterMode by remember { mutableStateOf(1) }
+    var filterMode by remember { mutableStateOf(0) }
     var selectedLevels by remember {
-        mutableStateOf(setOf(Log.INFO, Log.WARN, Log.ERROR))
+        mutableStateOf(setOf(Log.VERBOSE, Log.DEBUG, Log.INFO, Log.WARN, Log.ERROR))
     }
     var levelsMenuExpanded by remember { mutableStateOf(false) }
+
+    val musicTags = remember {
+        setOf(
+            "LinkMediaResolver", "IdentifyMusicUseCase", "AudioExtractor",
+            "ShazamClient", "MediaInspector", "CompositeRecognitionEngine",
+            "MusicRecognition", "Instagram", "YouTube", "Snapchat"
+        )
+    }
 
     val filtered = remember(allLogs, filterMode, selectedLevels) {
         allLogs.filter { entry ->
             val tagMatch = when (filterMode) {
-                0 -> entry.tag?.contains("Discord", true) == true ||
+                1 -> {
+                    val tag = entry.tag.orEmpty()
+                    val msg = entry.message
+                    musicTags.any { tag.contains(it, ignoreCase = true) || msg.contains(it, ignoreCase = true) }
+                }
+                2 -> entry.tag?.contains("Discord", true) == true ||
                         entry.message.contains("Discord", true) == true
                 else -> true
             }
@@ -251,7 +271,7 @@ private fun LogViewerPanel() {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                         DropdownMenuItem(
                             onClick = {
-                                selectedLevels = setOf(Log.INFO, Log.WARN, Log.ERROR)
+                                selectedLevels = setOf(Log.VERBOSE, Log.DEBUG, Log.INFO, Log.WARN, Log.ERROR)
                                 levelsMenuExpanded = false
                             },
                             text = {
@@ -278,18 +298,26 @@ private fun LogViewerPanel() {
                 SegmentedButton(
                     selected = filterMode == 0,
                     onClick = { filterMode = 0 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
                     icon = { }
                 ) {
-                    Text("Discord only")
+                    Text("All Logs")
                 }
                 SegmentedButton(
                     selected = filterMode == 1,
                     onClick = { filterMode = 1 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
                     icon = { }
                 ) {
-                    Text("All Logs")
+                    Text("Music ID")
+                }
+                SegmentedButton(
+                    selected = filterMode == 2,
+                    onClick = { filterMode = 2 },
+                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
+                    icon = { }
+                ) {
+                    Text("Discord")
                 }
             }
 

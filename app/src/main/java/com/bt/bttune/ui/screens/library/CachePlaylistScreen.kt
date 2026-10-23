@@ -1,5 +1,7 @@
 package com.bt.bttune.ui.screens.library
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +20,16 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import com.bt.bttune.constants.AppBarHeight
+import com.bt.bttune.utils.makeTimeString
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,6 +91,7 @@ import com.bt.bttune.constants.ThumbnailCornerRadius
 import com.bt.bttune.db.entities.Song
 import com.bt.bttune.extensions.toMediaItem
 import com.bt.bttune.extensions.togglePlayPause
+import com.bt.bttune.extensions.tryOrNull
 import com.bt.bttune.playback.queues.ListQueue
 import com.bt.bttune.ui.component.EmptyPlaceholder
 import com.bt.bttune.ui.component.IconButton
@@ -87,7 +101,12 @@ import com.bt.bttune.ui.menu.SelectionSongMenu
 import com.bt.bttune.ui.menu.SongMenu
 import com.bt.bttune.ui.utils.ItemWrapper
 import com.bt.bttune.ui.utils.backToMain
+import com.bt.bttune.viewmodels.BackupRestoreViewModel
 import com.bt.bttune.viewmodels.HistoryViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -95,8 +114,15 @@ fun CachePlaylistScreen(
     navController: NavController,
     scrollBehavior: TopAppBarScrollBehavior,
     viewModel: HistoryViewModel = hiltViewModel(),
+    backupViewModel: BackupRestoreViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val backupCacheLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+            if (uri != null) {
+                backupViewModel.backupCache(context, uri)
+            }
+        }
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
     val haptic = LocalHapticFeedback.current
@@ -105,16 +131,52 @@ fun CachePlaylistScreen(
     val isPlaying by playerConnection.isPlaying.collectAsState()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
     val events by viewModel.events.collectAsState()
+    val dbSongs by viewModel.database.allSongs().collectAsState(initial = emptyList())
 
-    val playerCache = LocalPlayerConnection.current?.service?.playerCache
+    val service = LocalPlayerConnection.current?.service
+    val playerCache = service?.playerCache
+    val downloadCache = service?.downloadCache
 
-    val cachedSongIds = remember(playerCache) {
-        playerCache?.keys?.mapNotNull { it.toString() }?.toSet() ?: emptySet()
+    val restoredCacheIds = remember {
+        runCatching {
+            val file = context.filesDir.resolve("restored_cache_ids.json")
+            if (file.exists()) {
+                val json = org.json.JSONArray(file.readText())
+                val set = mutableSetOf<String>()
+                for (i in 0 until json.length()) {
+                    set.add(json.getString(i))
+                }
+                set
+            } else emptySet()
+        }.getOrDefault(emptySet())
     }
 
-    val allSongs = remember(events, cachedSongIds) {
-        events.values.flatten()
-            .map { it.song }
+    var cachedSongIds by remember {
+        mutableStateOf(
+            buildSet {
+                addAll(restoredCacheIds)
+                tryOrNull { playerCache?.keys }?.mapNotNullTo(this) { it.toString() }
+                tryOrNull { downloadCache?.keys }?.mapNotNullTo(this) { it.toString() }
+            }
+        )
+    }
+
+    LaunchedEffect(playerCache, downloadCache) {
+        while (isActive) {
+            val keys = mutableSetOf<String>()
+            keys.addAll(restoredCacheIds)
+            tryOrNull { playerCache?.keys }?.mapNotNullTo(keys) { it.toString() }
+            tryOrNull { downloadCache?.keys }?.mapNotNullTo(keys) { it.toString() }
+            if (keys != cachedSongIds) {
+                cachedSongIds = keys.toSet()
+            }
+            delay(1000)
+        }
+    }
+
+    val allSongs = remember(events, dbSongs, cachedSongIds) {
+        val historySongs = events.values.flatten().map { it.song }
+        (historySongs + dbSongs)
             .distinctBy { it.id }
             .filter { it.id in cachedSongIds }
     }
@@ -314,49 +376,143 @@ fun CachePlaylistScreen(
             } else {
                 if (!isSearching) {
                     item {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.padding(12.dp),
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(AlbumThumbnailSize)
-                                        .clip(RoundedCornerShape(ThumbnailCornerRadius))
-                                ) {
-                                    AsyncImage(
-                                        model = filteredSongs.first().item.thumbnailUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(ThumbnailCornerRadius)),
-                                    )
-                                }
-                                Column(
-                                    verticalArrangement = Arrangement.Center,
-                                ) {
-                                    Text(
-                                        stringResource(R.string.cached_playlist),
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                        val thumbnails = remember(filteredSongs) {
+                            filteredSongs.mapNotNull { it.item.thumbnailUrl }.distinct().take(4)
+                        }
+                        val cacheLength = remember(filteredSongs) {
+                            filteredSongs.sumOf { it.item.duration }
+                        }
 
-                                    Text(
-                                        text = pluralStringResource(
-                                            id = R.plurals.n_song,
-                                            count = filteredSongs.size,
-                                            filteredSongs.size
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = WindowInsets.systemBars.asPaddingValues().calculateTopPadding() + AppBarHeight),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 8.dp, bottom = 20.dp)
+                            ) {
+                                if (thumbnails.size == 1) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(240.dp)
+                                            .shadow(
+                                                elevation = 24.dp,
+                                                shape = RoundedCornerShape(16.dp),
+                                                spotColor = gradientColors.getOrNull(0)?.copy(alpha = 0.5f)
+                                                    ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                            ),
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        AsyncImage(
+                                            model = thumbnails[0],
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                } else if (thumbnails.size > 1) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(240.dp)
+                                            .shadow(
+                                                elevation = 24.dp,
+                                                shape = RoundedCornerShape(16.dp),
+                                                spotColor = gradientColors.getOrNull(0)?.copy(alpha = 0.5f)
+                                                    ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                            ),
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            listOf(
+                                                Alignment.TopStart,
+                                                Alignment.TopEnd,
+                                                Alignment.BottomStart,
+                                                Alignment.BottomEnd,
+                                            ).forEachIndexed { index, alignment ->
+                                                AsyncImage(
+                                                    model = thumbnails.getOrNull(index) ?: thumbnails[0],
+                                                    contentDescription = null,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .align(alignment)
+                                                        .size(120.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(240.dp)
+                                            .shadow(
+                                                elevation = 16.dp,
+                                                shape = RoundedCornerShape(16.dp)
+                                            ),
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.cached),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(80.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = stringResource(R.string.cached_playlist),
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 32.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 48.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                MetadataChip(
+                                    icon = R.drawable.music_note,
+                                    text = pluralStringResource(
+                                        id = R.plurals.n_song,
+                                        count = filteredSongs.size,
+                                        filteredSongs.size
+                                    )
+                                )
+
+                                if (cacheLength > 0) {
+                                    MetadataChip(
+                                        icon = R.drawable.schedule,
+                                        text = makeTimeString(cacheLength * 1000L)
                                     )
                                 }
                             }
 
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Button(
                                     onClick = {
                                         playerConnection.playQueue(
@@ -400,6 +556,8 @@ fun CachePlaylistScreen(
                                     Text(stringResource(R.string.shuffle))
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
                 }
@@ -573,6 +731,17 @@ fun CachePlaylistScreen(
                         )
                     }
                 } else if (!isSearching) {
+                    IconButton(onClick = {
+                        val formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+                        backupCacheLauncher.launch(
+                            "BTTUNE_Cache_${LocalDateTime.now().format(formatter)}.airbeatscache"
+                        )
+                    }) {
+                        Icon(
+                            painter = painterResource(R.drawable.backup),
+                            contentDescription = stringResource(R.string.backup_cached_songs)
+                        )
+                    }
                     IconButton(onClick = { isSearching = true }) {
                         Icon(
                             painter = painterResource(R.drawable.search),
@@ -582,5 +751,37 @@ fun CachePlaylistScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun MetadataChip(
+    icon: Int,
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
     }
 }

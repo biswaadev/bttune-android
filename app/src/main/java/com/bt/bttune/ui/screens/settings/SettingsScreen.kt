@@ -75,6 +75,13 @@ import com.bt.bttune.constants.InnerTubeCookieKey
 import com.bt.bttune.ui.component.AvatarPreferenceManager
 import com.bt.bttune.ui.component.AvatarSelection
 import com.bt.bttune.ui.component.ChangelogScreen
+import com.bt.bttune.ui.component.UpdateAvailableDialog
+import com.bt.bttune.ui.component.isFrostedGlassUiEnabled
+import com.bt.bttune.ui.component.settingsCardContainerColor
+import com.bt.bttune.ui.component.settingsCardBorder
+import com.bt.bttune.utils.RemoteConfigManager
+import com.bt.bttune.utils.UpdateInfo
+import com.bt.bttune.utils.Updater
 import com.bt.bttune.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -123,12 +130,14 @@ fun SettingsCategory(
             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
         )
 
+        val isFrosted = isFrostedGlassUiEnabled()
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f)
+                containerColor = settingsCardContainerColor(isFrosted)
             ),
+            border = settingsCardBorder(isFrosted),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
@@ -241,12 +250,14 @@ fun GlassCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val isFrosted = isFrostedGlassUiEnabled()
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f)
+            containerColor = settingsCardContainerColor(isFrosted)
         ),
+        border = settingsCardBorder(isFrosted),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         content()
@@ -376,8 +387,6 @@ fun WaterDropIconButton(
 
 // ==================== ORIGINAL FUNCTIONS ====================
 
-@SuppressLint("ObsoleteSdkInt")
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 fun getAppVersion(context: Context): String {
     return try {
         val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -398,9 +407,8 @@ fun getAppVersion(context: Context): String {
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
-fun VersionCard(uriHandler: UriHandler) {
+fun VersionCard(uriHandler: UriHandler, navController: NavController? = null) {
     val context = LocalContext.current
     val appVersion = remember { getAppVersion(context) }
 
@@ -460,7 +468,53 @@ fun VersionCard(uriHandler: UriHandler) {
                                 )
                             }
                         },
-                        onClick = { uriHandler.openUri("https://github.com/batz-dev/bttune-android/releases/latest") }
+                        onClick = {
+                            if (navController != null) {
+                                navController.navigate("settings/app_info")
+                            } else {
+                                uriHandler.openUri(com.bt.bttune.utils.RemoteConfigManager.getLatestReleasePageUrl())
+                            }
+                        }
+                    ),
+                    isLast = false
+                )
+
+                SettingsDivider(modifier = Modifier.padding(start = 72.dp, end = 16.dp))
+
+                // Website item
+                SettingsCategoryItemContent(
+                    item = SettingsCategoryItem(
+                        icon = painterResource(R.drawable.resource_public),
+                        title = {
+                            Text(
+                                text = "Official Website",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        trailingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.arrow_forward),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        onClick = {
+                            val url = com.bt.bttune.utils.RemoteConfigManager.websiteUrl
+                            val safeUrl = if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) url else "https://$url"
+                            runCatching { uriHandler.openUri(safeUrl) }
+                        }
                     ),
                     isLast = true
                 )
@@ -474,18 +528,33 @@ fun UpdateCard(latestVersion: String = "") {
     val context = LocalContext.current
     var showUpdateCard by remember { mutableStateOf(false) }
     var currentLatestVersion by remember { mutableStateOf(latestVersion) }
+    var updateInfoState by remember { mutableStateOf<UpdateInfo?>(null) }
     var showDownloadDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        val newVersion = checkForUpdates()
-        if (newVersion != null && isNewerVersion(newVersion, BuildConfig.VERSION_NAME)) {
-            showUpdateCard = true
-            currentLatestVersion = newVersion
+        Updater.getLatestUpdateInfo().onSuccess { info ->
+            if (info.versionName.isNotBlank() && isNewerVersion(info.versionName, BuildConfig.VERSION_NAME)) {
+                showUpdateCard = true
+                currentLatestVersion = info.versionName
+                updateInfoState = info
+            }
+        }.onFailure {
+            val newVersion = checkForUpdates()
+            if (newVersion != null && isNewerVersion(newVersion, BuildConfig.VERSION_NAME)) {
+                showUpdateCard = true
+                currentLatestVersion = newVersion
+                updateInfoState = UpdateInfo(versionName = newVersion)
+            }
         }
     }
 
     if (showDownloadDialog) {
-        UpdateDownloadDialog(
+        updateInfoState?.let { info ->
+            UpdateAvailableDialog(
+                updateInfo = info,
+                onDismiss = { showDownloadDialog = false }
+            )
+        } ?: UpdateDownloadDialog(
             latestVersion = currentLatestVersion,
             onDismiss = { showDownloadDialog = false }
         )
@@ -627,8 +696,10 @@ fun UpdateDownloadDialog(
                             WaterDropButton(
                                 onClick = {
                                     downloadStatus = DownloadStatus.REDIRECTING
-                                    val cleanTag = if (latestVersion.startsWith("v")) latestVersion else "v$latestVersion"
-                                    val downloadUrl = "https://github.com/batz-dev/bttune-android/releases/download/$cleanTag/BTTUNE-release.apk"
+                                    val downloadUrl = com.bt.bttune.utils.RemoteConfigManager.getApkDownloadUrl(
+                                        latestVersion,
+                                        com.bt.bttune.BuildConfig.IS_NIGHTLY
+                                    )
                                     uriHandler.openUri(downloadUrl)
                                     downloadStatus = DownloadStatus.COMPLETED
                                     onDismiss()
@@ -702,12 +773,29 @@ enum class DownloadStatus {
 
 suspend fun checkForUpdates(): String? = withContext(Dispatchers.IO) {
     try {
-        val url = URL("https://api.github.com/repos/batz-dev/bttune-android/releases/latest")
-        val connection = url.openConnection()
-        connection.connect()
-        val json = connection.getInputStream().bufferedReader().use { it.readText() }
-        val jsonObject = JSONObject(json)
-        return@withContext jsonObject.optString("tag_name", jsonObject.optString("name", null))
+        if (com.bt.bttune.BuildConfig.IS_NIGHTLY) {
+            val url = java.net.URL(com.bt.bttune.utils.RemoteConfigManager.getLatestReleaseApiUrl(isNightly = true))
+            val connection = url.openConnection()
+            connection.connect()
+            val json = connection.getInputStream().bufferedReader().use { it.readText() }
+            val jsonArray = org.json.JSONArray(json)
+            for (i in 0 until jsonArray.length()) {
+                val release = jsonArray.getJSONObject(i)
+                if (release.getBoolean("prerelease")) {
+                    val tagName = release.getString("tag_name")
+                    return@withContext tagName.removePrefix("v").removeSuffix("-nightly").trim()
+                }
+            }
+            return@withContext null
+        } else {
+            val url = java.net.URL(com.bt.bttune.utils.RemoteConfigManager.getLatestReleaseApiUrl(isNightly = false))
+            val connection = url.openConnection()
+            connection.connect()
+            val json = connection.getInputStream().bufferedReader().use { it.readText() }
+            val jsonObject = org.json.JSONObject(json)
+            val tagName = jsonObject.getString("tag_name")
+            return@withContext tagName.removePrefix("v").trim()
+        }
     } catch (e: Exception) {
         e.printStackTrace()
         return@withContext null
@@ -736,7 +824,6 @@ fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean {
 }
 
 // ==================== MAIN SETTINGS SCREEN ====================
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -754,41 +841,11 @@ fun SettingsScreen(
         ?: remember { mutableStateOf(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 🎵 BLUR BACKGROUND
+        // Adaptive background: blurred song thumbnail when playing, Library mesh when no song playing
         val artworkUrl = mediaMetadata?.thumbnailUrl
-
-        artworkUrl?.let { imageUrl ->
-            com.bt.bttune.ui.component.BlurredBackground(
-                model = imageUrl
-            )
-
-            val isDarkTheme =
-                MaterialTheme.colorScheme.background.luminance() < 0.5f
-
-            val overlayBrush = if (isDarkTheme) {
-                Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.2f),
-                        Color.Black.copy(alpha = 0.5f),
-                        Color.Black.copy(alpha = 0.85f)
-                    )
-                )
-            } else {
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                        MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
-                    )
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(overlayBrush)
-            )
-        }
+        com.bt.bttune.ui.component.ScreenAdaptiveBackground(
+            artworkUrl = artworkUrl
+        )
 
         // Main Scaffold with TopAppBar that scrolls
         Scaffold(
@@ -937,6 +994,16 @@ fun SettingsScreen(
                                 onClick = { navController.navigate("settings/content") }
                             ),
                             SettingsCategoryItem(
+                                icon = painterResource(R.drawable.lyrics),
+                                title = { Text("Lyrics", color = MaterialTheme.colorScheme.onSurface) },
+                                onClick = { navController.navigate("settings/lyrics") }
+                            ),
+                            SettingsCategoryItem(
+                                icon = painterResource(R.drawable.ic_gen_ai),
+                                title = { Text("AI Integration", color = MaterialTheme.colorScheme.onSurface) },
+                                onClick = { navController.navigate("settings/ai") }
+                            ),
+                            SettingsCategoryItem(
                                 icon = painterResource(R.drawable.play),
                                 title = {
                                     Text(
@@ -945,6 +1012,36 @@ fun SettingsScreen(
                                     )
                                 },
                                 onClick = { navController.navigate("settings/player") }
+                            ),
+                            SettingsCategoryItem(
+                                icon = painterResource(R.drawable.swipe),
+                                title = {
+                                    Text(
+                                        "Gestures",
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = { navController.navigate("settings/gestures") }
+                            ),
+                            SettingsCategoryItem(
+                                icon = painterResource(R.drawable.graphic_eq),
+                                title = {
+                                    Text(
+                                        "Scrobbler",
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = { navController.navigate("settings/scrobbler") }
+                            ),
+                            SettingsCategoryItem(
+                                icon = painterResource(R.drawable.play),
+                                title = {
+                                    Text(
+                                        "Android Auto",
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = { navController.navigate("settings/android_auto") }
                             ),
                             SettingsCategoryItem(
                                 icon = painterResource(R.drawable.group),
@@ -1004,6 +1101,16 @@ fun SettingsScreen(
                         title = stringResource(R.string.community),
                         items = listOf(
                             SettingsCategoryItem(
+                                icon = painterResource(R.drawable.newspaper),
+                                title = {
+                                    Text(
+                                        "News from Developers",
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = { navController.navigate("settings/developer_news") }
+                            ),
+                            SettingsCategoryItem(
                                 icon = painterResource(R.drawable.info),
                                 title = {
                                     Text(
@@ -1014,14 +1121,14 @@ fun SettingsScreen(
                                 onClick = { navController.navigate("settings/about") }
                             ),
                             SettingsCategoryItem(
-                                icon = painterResource(R.drawable.telegram),
+                                icon = painterResource(R.drawable.translate), // Assuming R.drawable.translate exists. If not, I can use R.drawable.language
                                 title = {
                                     Text(
-                                        "Contact Support (@freek311)",
+                                        "Help Translate",
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                 },
-                                onClick = { uriHandler.openUri("https://t.me/freek311") }
+                                onClick = { uriHandler.openUri("https://crowdin.com/project/airbeats") }
                             ),
                             SettingsCategoryItem(
                                 icon = painterResource(R.drawable.schedule),
@@ -1032,6 +1139,19 @@ fun SettingsScreen(
                                     )
                                 },
                                 onClick = { showChangelogSheet = true }
+                            ),
+                            SettingsCategoryItem(
+                                icon = painterResource(R.drawable.telegram),
+                                title = {
+                                    Text(
+                                        "Telegram",
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    val telegramUrl = RemoteConfigManager.telegramUrl.ifBlank { RemoteConfigManager.DEFAULT_TELEGRAM_URL }
+                                    uriHandler.openUri(telegramUrl)
+                                }
                             )
                         )
                     )
@@ -1041,7 +1161,7 @@ fun SettingsScreen(
                 UpdateCard()
 
                 // Version Card
-                VersionCard(uriHandler)
+                VersionCard(uriHandler, navController)
 
                 Spacer(Modifier.height(32.dp))
             }
@@ -1446,7 +1566,7 @@ fun ProfileSection(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.bttune_monochrome),
+                        painter = painterResource(R.drawable.airbeats_monochrome),
                         contentDescription = "Logo de BTTUNE",
                         modifier = Modifier.fillMaxSize(),
                         tint = MaterialTheme.colorScheme.primary
@@ -1464,7 +1584,7 @@ fun ProfileSection(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             ) {
-                                append("BT")
+                                append("Air")
                             }
 
                             withStyle(
@@ -1472,7 +1592,7 @@ fun ProfileSection(
                                     color = MaterialTheme.colorScheme.tertiary
                                 )
                             ) {
-                                append("TUNE")
+                                append("Beats")
                             }
                         },
                         style = MaterialTheme.typography.headlineMedium,
@@ -1480,7 +1600,7 @@ fun ProfileSection(
                     )
 
                     Text(
-                        text = "Dev By AF CRIS AKA BISWAJIT",
+                        text = "Dev By DxV STUDIO 亗",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     )

@@ -29,14 +29,14 @@ class DiscordRPC(
             name = context.getString(R.string.app_name).removeSuffix(" Debug"),
             details = songTitleWithRate,
             state = song.artists.joinToString { it.name },
-            detailsUrl = "https://play.bttune.app/song?id=${song.song.id}",
+            detailsUrl = com.bt.bttune.utils.RemoteConfigManager.getSongShareUrl(song.song.id),
             largeImage = song.song.thumbnailUrl?.let { RpcImage.ExternalImage(it) },
             smallImage = song.artists.firstOrNull()?.thumbnailUrl?.let { RpcImage.ExternalImage(it) },
             largeText = song.album?.title,
             smallText = song.artists.firstOrNull()?.name,
             buttons = listOf(
-                "Listen on YouTube Music" to "https://play.bttune.app/song?id=${song.song.id}",
-                "Visit BTTUNE" to "https://github.com/batz-dev/bttune-android"
+                "Listen on YouTube Music" to com.bt.bttune.utils.RemoteConfigManager.getSongShareUrl(song.song.id),
+                "Visit BTTUNE" to com.bt.bttune.utils.RemoteConfigManager.websiteUrl
             ),
             type = Type.LISTENING,
             statusDisplayType = if (useDetails) StatusDisplayType.DETAILS else StatusDisplayType.STATE,

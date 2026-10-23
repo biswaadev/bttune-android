@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -105,6 +107,7 @@ import com.bt.bttune.playback.ExoDownloadService
 import com.bt.bttune.playback.queues.ListQueue
 import com.bt.bttune.ui.component.AlbumGridItem
 import com.bt.bttune.ui.component.DefaultDialog
+import com.bt.bttune.ui.component.DownloadQualityDialog
 import com.bt.bttune.ui.component.DraggableScrollbar
 import com.bt.bttune.ui.component.IconButton
 import com.bt.bttune.ui.component.LocalMenuState
@@ -220,6 +223,7 @@ fun AlbumScreen(
 
     val downloadUtil = LocalDownloadUtil.current
     var downloadState by remember { mutableStateOf(Download.STATE_STOPPED) }
+    var showQualityDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(albumWithSongs) {
         val songs = albumWithSongs?.songs?.map { it.id }
@@ -429,7 +433,8 @@ fun AlbumScreen(
 
                         if (albumWithSongs.artists.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(4.dp))
-                            Row(
+                            @OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(
                                 modifier = Modifier.padding(horizontal = 32.dp),
                                 horizontalArrangement = Arrangement.Center
                             ) {
@@ -582,19 +587,7 @@ fun AlbumScreen(
                                             }
                                         }
                                         else -> {
-                                            albumWithSongs.songs.forEach { song ->
-                                                val downloadRequest = DownloadRequest
-                                                    .Builder(song.id, song.id.toUri())
-                                                    .setCustomCacheKey(song.id)
-                                                    .setData(song.song.title.toByteArray())
-                                                    .build()
-                                                DownloadService.sendAddDownload(
-                                                    context,
-                                                    ExoDownloadService::class.java,
-                                                    downloadRequest,
-                                                    false,
-                                                )
-                                            }
+                                            showQualityDialog = true
                                         }
                                     }
                                 },
@@ -632,6 +625,27 @@ fun AlbumScreen(
                                         }
                                     }
                                 }
+                            }
+                            if (showQualityDialog) {
+                                DownloadQualityDialog(
+                                    onDismiss = { showQualityDialog = false },
+                                    onQualitySelected = {
+                                        showQualityDialog = false
+                                        albumWithSongs.songs.forEach { song ->
+                                            val downloadRequest = DownloadRequest
+                                                .Builder(song.id, song.id.toUri())
+                                                .setCustomCacheKey(song.id)
+                                                .setData(song.song.title.toByteArray())
+                                                .build()
+                                            DownloadService.sendAddDownload(
+                                                context,
+                                                ExoDownloadService::class.java,
+                                                downloadRequest,
+                                                false,
+                                            )
+                                        }
+                                    },
+                                )
                             }
 
                             Surface(

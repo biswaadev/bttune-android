@@ -1,28 +1,25 @@
-@file:Suppress("UnstableApiUsage")
-
+import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
-    id("com.android.application")
-    kotlin("android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.hilt.android)
+    alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
-    kotlin("kapt")
+    id("kotlin-parcelize")
     id("com.google.gms.google-services")
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.kotlin.ksp)
-    alias(libs.plugins.compose.compiler)
 }
 
-val localProperties = Properties().apply {
-    val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        localPropertiesFile.inputStream().use { load(it) }
-    }
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
 }
-val googleApiKey = localProperties.getProperty("google.api.key") ?: ""
-val statsApiKey = localProperties.getProperty("stats.api.key") ?: ""
-val statsBaseUrl = localProperties.getProperty("stats.base.url") ?: ""
-val authBaseUrl = localProperties.getProperty("auth.api.base.url") ?: ""
+
+val googleApiKey: String = localProperties.getProperty("GOOGLE_API_KEY", "")
+val statsApiKey: String = localProperties.getProperty("STATS_API_KEY", "")
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -36,41 +33,19 @@ android {
         applicationId = "com.bt.bttune"
         minSdk = 26
         targetSdk = 35
-        versionCode = 174
-        versionName = "6.0.3"
+        versionCode = 173
+        versionName = "6.0.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GOOGLE_API_KEY", googleApiKey.asBuildConfigString())
         buildConfigField("String", "STATS_API_KEY", statsApiKey.asBuildConfigString())
-        buildConfigField("String", "STATS_BASE_URL", statsBaseUrl.asBuildConfigString())
-        buildConfigField("String", "AUTH_API_BASE_URL", authBaseUrl.asBuildConfigString())
-        
-        // Strip out language resources from libraries that the app doesn't support
-        resourceConfigurations += "en"
+        manifestPlaceholders["redirectHost"] = "play.bttune.app"
+        manifestPlaceholders["redirectScheme"] = "https"
+        ndk {
+            // Filter for common ABIs to reduce APK size
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
     }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            isCrunchPngs = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = signingConfigs.getByName("debug")
-        }
-        debug {
-            applicationIdSuffix = ".debug"
-        }
-    }
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = true
-        }
-    }
     signingConfigs {
         getByName("debug") {
             isV1SigningEnabled = true
@@ -90,12 +65,39 @@ android {
         }
     }
 
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "IS_NIGHTLY", "false")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            isCrunchPngs = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "IS_NIGHTLY", "false")
+            applicationIdSuffix = ".debug"
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     buildFeatures {
         buildConfig = true
         compose = true
     }
 
-    // ✅ Alineamos TODO a Java 17
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
@@ -140,17 +142,21 @@ android {
             excludes += "META-INF/INDEX.LIST"
             excludes += "META-INF/DEPENDENCIES"
             excludes += "META-INF/*.version"
-            excludes += "org/bouncycastle/pqc/**"
-            excludes += "org/bouncycastle/x509/*.properties"
-            excludes += "google/protobuf/*.proto"
-            excludes += "com/google/api/client/googleapis/*.p12"
-            excludes += "com/google/api/client/googleapis/*.jks"
+            excludes += "org/bouncycastle/**/*.properties"
+            excludes += "**/*.bin.properties"
+            excludes += "com/google/api/client/**/*.p12"
+            excludes += "com/google/api/client/**/*.jks"
+            excludes += "**/*.proto"
         }
     }
 }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+configurations.all {
+    exclude(group = "org.json", module = "json")
 }
 
 dependencies {
@@ -187,8 +193,13 @@ dependencies {
     implementation(libs.media3)
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)
-    implementation("androidx.media3:media3-ui:1.8.0")
+    implementation(libs.media3.ui)
     implementation(libs.squigglyslider)
+
+    // Google Cast & local streaming proxy
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     implementation(libs.room.runtime)
     implementation(libs.kotlinx.serialization.json)
@@ -205,6 +216,9 @@ dependencies {
     implementation(libs.ui.graphics)
     implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-config")
+    implementation("com.google.firebase:firebase-auth")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     ksp(libs.room.compiler)
     implementation(libs.room.ktx)
 
@@ -232,6 +246,7 @@ dependencies {
     implementation(projects.kugou)
     implementation(projects.lrclib)
     implementation(projects.kizzy)
+    implementation(projects.spotify)
     implementation(project(":jossredconnect"))
     implementation(project(":shazamkit"))
     implementation(project(":betterlyrics"))
@@ -247,5 +262,3 @@ dependencies {
     implementation(libs.timber)
     testImplementation(libs.junit)
 }
-
-

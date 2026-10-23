@@ -9,7 +9,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 import java.time.LocalDateTime
 
 @Immutable
@@ -34,6 +33,9 @@ data class ArtistEntity(
     val isLocalArtist: Boolean
         get() = id.startsWith("LA")
 
+    val isScrobbleArtist: Boolean
+        get() = id.startsWith("artist_")
+
     fun localToggleLike() = copy(
         bookmarkedAt = if (bookmarkedAt != null) null else LocalDateTime.now(),
     )
@@ -50,7 +52,6 @@ data class ArtistEntity(
     }
 
     companion object {
-        private val CHAR_POOL = ('a'..'z') + ('A'..'Z')
-        fun generateArtistId() = "LA" + (1..8).map { CHAR_POOL.random() }.joinToString("")
+        fun generateArtistId() = "LA" + (1..8).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
     }
 }

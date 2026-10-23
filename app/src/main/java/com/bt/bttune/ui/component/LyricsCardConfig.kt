@@ -5,54 +5,63 @@
 
 package com.bt.bttune.ui.component
 
+import androidx.annotation.StringRes
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.bt.bttune.R
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Layout styles — cada valor representa un diseño visual distinto para la tarjeta
-// Agregar un nuevo estilo = añadir un entry aquí + un composable en LyricsCardLayouts
+// Layout styles — each value represents a distinct visual layout for the card
+// Adding a new style = add an entry here + composable in LyricsCardLayouts
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum class LyricsLayoutStyle(
     val displayName: String,
     val description: String,
+    @StringRes val titleRes: Int,
 ) {
     GlassCard(
         displayName = "Glass Card",
-        description = "Panel de vidrio líquido",
+        description = "Liquid glass panel",
+        titleRes = R.string.lyrics_layout_glass_card,
     ),
     Minimal(
         displayName = "Minimal",
-        description = "Limpio y sin distracciones",
+        description = "Clean and distraction-free",
+        titleRes = R.string.lyrics_layout_minimal,
     ),
     CoverFocused(
         displayName = "Cover Focus",
-        description = "Portada del álbum destacada",
+        description = "Prominent album cover art",
+        titleRes = R.string.lyrics_layout_cover_focus,
     ),
     Centered(
-        displayName = "Centrado",
-        description = "Letra como protagonista",
+        displayName = "Centered",
+        description = "Lyrics front and center",
+        titleRes = R.string.lyrics_layout_centered,
     ),
     BlurWash(
         displayName = "Blur Wash",
-        description = "Fondo ultra difuminado",
+        description = "Ultra blurred backdrop",
+        titleRes = R.string.lyrics_layout_blur_wash,
     ),
     StreamingModern(
         displayName = "Streaming",
-        description = "Estilo app de música moderna",
+        description = "Modern music app aesthetic",
+        titleRes = R.string.lyrics_layout_streaming,
     ),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipo de fondo para layouts que aceptan variantes de fondo
+// Background type for layouts accepting background variations
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum class LyricsBackgroundType(val displayName: String) {
-    AlbumArt("Portada"),
-    SolidDark("Oscuro"),
-    SolidLight("Claro"),
-    Gradient("Degradado"),
+    AlbumArt("Album Art"),
+    SolidDark("Dark"),
+    SolidLight("Light"),
+    Gradient("Gradient"),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

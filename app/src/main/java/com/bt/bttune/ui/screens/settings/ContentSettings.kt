@@ -9,29 +9,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.bt.bttune.LocalDatabase
 import com.bt.bttune.NotificationPermissionPreference
 import com.bt.bttune.R
 import com.bt.bttune.innertube.YouTube
-import com.bt.bttune.constants.ContentCountryKey
-import com.bt.bttune.constants.MusicProviderKey
-import com.bt.bttune.constants.ContentLanguageKey
-import com.bt.bttune.constants.CountryCodeToName
-import com.bt.bttune.constants.EnableKugouKey
-import com.bt.bttune.constants.EnableLrcLibKey
-import com.bt.bttune.constants.HideExplicitKey
-import com.bt.bttune.constants.HistoryDuration
-import com.bt.bttune.constants.LanguageCodeToName
-import com.bt.bttune.constants.PreferredLyricsProvider
-import com.bt.bttune.constants.PreferredLyricsProviderKey
-import com.bt.bttune.constants.ProxyEnabledKey
-import com.bt.bttune.constants.ProxyTypeKey
-import com.bt.bttune.constants.ProxyUrlKey
-import com.bt.bttune.constants.QuickPicks
-import com.bt.bttune.constants.QuickPicksKey
-import com.bt.bttune.constants.SYSTEM_DEFAULT
-import com.bt.bttune.constants.TopSize
+import com.bt.bttune.constants.*
 import com.bt.bttune.ui.component.EditTextPreference
 import com.bt.bttune.ui.component.ListPreference
+import com.bt.bttune.ui.component.PreferenceEntry
 import com.bt.bttune.ui.component.SettingsGeneralCategory
 import com.bt.bttune.ui.component.SettingsPage
 import com.bt.bttune.ui.component.SliderPreference
@@ -51,6 +38,10 @@ fun ContentSettings(
     val (contentLanguage, onContentLanguageChange) = rememberPreference(
         key = ContentLanguageKey,
         defaultValue = SYSTEM_DEFAULT
+    )
+    val (enableJioSaavn, onEnableJioSaavnChange) = rememberPreference(
+        key = EnableJioSaavnKey,
+        defaultValue = true
     )
     val (musicProvider, onMusicProviderChange) = rememberPreference(
         key = MusicProviderKey,
@@ -88,20 +79,6 @@ fun ContentSettings(
         key = QuickPicksKey,
         defaultValue = QuickPicks.QUICK_PICKS
     )
-    val (enableKugou, onEnableKugouChange) = rememberPreference(
-        key = EnableKugouKey,
-        defaultValue = true
-    )
-    val (enableLrclib, onEnableLrclibChange) = rememberPreference(
-        key = EnableLrcLibKey,
-        defaultValue = true
-    )
-    val (preferredProvider, onPreferredProviderChange) = rememberEnumPreference(
-        key = PreferredLyricsProviderKey,
-        defaultValue = PreferredLyricsProvider.LRCLIB
-    )
-
-
     SettingsPage(
         title = stringResource(R.string.content),
         navController = navController,
@@ -111,16 +88,15 @@ fun ContentSettings(
         SettingsGeneralCategory(
             title = stringResource(R.string.general),
             items = listOf(
-                {ListPreference(
-                    title = { Text(stringResource(R.string.module)) },
-                    icon = { Icon(painterResource(R.drawable.music_note), null) },
-                    selectedValue = musicProvider,
-                    values = listOf("YT", "JIOSAAVN"),
-                    valueText = {
-                        if (it == "YT") "YT (Compatible)" else "Jio Saavn (Incompatible Supported VPN)"
-                    },
-                    onValueSelected = onMusicProviderChange,
-                )},
+                {
+                    SwitchPreference(
+                        title = { Text(stringResource(R.string.enable_jiosaavn)) },
+                        description = stringResource(R.string.enable_jiosaavn_desc),
+                        icon = { Icon(painterResource(R.drawable.music_note), null) },
+                        checked = enableJioSaavn,
+                        onCheckedChange = onEnableJioSaavnChange,
+                    )
+                },
                 {ListPreference(
                     title = { Text(stringResource(R.string.content_language)) },
                     icon = { Icon(painterResource(R.drawable.language), null) },
@@ -172,6 +148,23 @@ fun ContentSettings(
             )
         )
 
+        // Recommendations
+        val database = LocalDatabase.current
+        val excludedCount by database.getRecommendationExclusionsCount().collectAsState(initial = 0)
+        SettingsGeneralCategory(
+            title = stringResource(R.string.recommendations),
+            items = listOf(
+                {
+                    PreferenceEntry(
+                        title = { Text(stringResource(R.string.excluded_songs)) },
+                        description = stringResource(R.string.excluded_songs_desc, excludedCount),
+                        icon = { Icon(painterResource(R.drawable.block), null) },
+                        onClick = { navController.navigate("settings/content/excluded_songs") },
+                    )
+                }
+            )
+        )
+
         // Proxy settings
         SettingsGeneralCategory(
             title = stringResource(R.string.proxy),
@@ -198,25 +191,6 @@ fun ContentSettings(
                         )
                     }
                 }}
-            )
-        )
-
-        // Lyrics settings
-        SettingsGeneralCategory(
-            title = stringResource(R.string.lyrics),
-            items = listOf(
-                {SwitchPreference(
-                    title = { Text(stringResource(R.string.enable_lrclib)) },
-                    icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                    checked = enableLrclib,
-                    onCheckedChange = onEnableLrclibChange,
-                )},
-                {SwitchPreference(
-                    title = { Text(stringResource(R.string.enable_kugou)) },
-                    icon = { Icon(painterResource(R.drawable.lyrics), null) },
-                    checked = enableKugou,
-                    onCheckedChange = onEnableKugouChange,
-                )},
             )
         )
 

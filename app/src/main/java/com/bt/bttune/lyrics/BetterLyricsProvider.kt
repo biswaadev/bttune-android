@@ -9,6 +9,9 @@ package com.bt.bttune.lyrics
 
 import android.content.Context
 import com.bt.bttune.betterlyrics.BetterLyrics
+import com.bt.bttune.constants.EnableBetterLyricsKey
+import com.bt.bttune.utils.dataStore
+import com.bt.bttune.utils.get
 import android.util.Log
 
 object BetterLyricsProvider : LyricsProvider {
@@ -20,7 +23,7 @@ object BetterLyricsProvider : LyricsProvider {
 
     override val name = "BetterLyrics"
 
-    override fun isEnabled(context: Context): Boolean = true
+    override fun isEnabled(context: Context): Boolean = context.dataStore[EnableBetterLyricsKey] ?: true
 
     override suspend fun getLyrics(
         id: String,

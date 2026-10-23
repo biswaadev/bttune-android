@@ -1,5 +1,6 @@
 package com.bt.bttune.ui.screens.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,32 +24,22 @@ import com.bt.bttune.utils.rememberPreference
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import android.widget.Toast
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.bt.bttune.viewmodels.BackupRestoreViewModel
-import androidx.compose.ui.draw.blur
+import com.bt.bttune.LocalPlayerAwareWindowInsets
+import com.bt.bttune.LocalPlayerConnection
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
-import coil.compose.AsyncImage
-import com.bt.bttune.LocalPlayerAwareWindowInsets
-import com.bt.bttune.LocalPlayerConnection
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
-import com.google.android.gms.common.api.ApiException
-import kotlinx.coroutines.flow.first
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
+import androidx.datastore.preferences.core.edit
+import com.bt.bttune.utils.dataStore
+import kotlinx.coroutines.flow.map
+import timber.log.Timber
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSettings(
@@ -60,13 +51,8 @@ fun AccountSettings(
 
     val nameManager = remember { NamePreferenceManager(context) }
     val currentDisplayName by nameManager.userName.collectAsState(initial = "")
-    val currentGoogleEmail by nameManager.accountEmail.collectAsState(initial = "")
-    
-    val backupViewModel: BackupRestoreViewModel = hiltViewModel()
     val avatarManager = remember { AvatarPreferenceManager(context) }
-
     var showEditNameDialog by remember { mutableStateOf(false) }
-    var isGoogleSignInOpen by remember { mutableStateOf(false) }
 
     val (accountName, onAccountNameChange) = rememberPreference(AccountNameKey, "")
     val (accountEmail, onAccountEmailChange) = rememberPreference(AccountEmailKey, "")
@@ -117,185 +103,14 @@ fun AccountSettings(
     val mediaMetadata by playerConnection?.mediaMetadata?.collectAsState()
         ?: remember { mutableStateOf(null) }
 
-    fun generatedAvatarUrl(name: String, email: String): String {
-        val seed = name.takeIf { it.isNotBlank() } ?: email
-        val encodedSeed = URLEncoder.encode(seed, StandardCharsets.UTF_8.toString())
-        return "https://api.dicebear.com/9.x/initials/svg?seed=$encodedSeed&backgroundType=gradientLinear"
-    }
 
-    fun displayNameFromEmail(email: String): String {
-        return email
-            .substringBefore("@")
-            .replace('.', ' ')
-            .replace('_', ' ')
-            .replace('-', ' ')
-            .split(' ')
-            .filter { it.isNotBlank() }
-            .joinToString(" ") { part ->
-                part.replaceFirstChar { char ->
-                    if (char.isLowerCase()) char.titlecase() else char.toString()
-                }
-            }
-            .ifBlank { "Friend" }
-    }
-
-    fun linkGoogleAccount(name: String, email: String, photoUrl: String?) {
-        scope.launch {
-            try {
-                if (!nameManager.canUseGoogleEmail(email)) {
-                    val lockedEmail = nameManager.previousGoogleEmail.first().ifBlank { "your previous email" }
-                    Toast.makeText(context, nameManager.lockedEmailMessage(lockedEmail), Toast.LENGTH_LONG).show()
-                    return@launch
-                }
-
-                nameManager.saveUserName(name)
-                nameManager.rememberGoogleLoginEmail(email)
-                if (!photoUrl.isNullOrBlank()) {
-                    avatarManager.saveAvatarSelection(
-                        AvatarSelection.Custom(uri = photoUrl, cloudUrl = photoUrl)
-                    )
-                } else {
-                    avatarManager.saveAvatarSelection(
-                        AvatarSelection.DiceBear(generatedAvatarUrl(name, email))
-                    )
-                }
-                
-                val backupClient = com.bt.bttune.utils.CloudBackupClient()
-                val backupExists = backupClient.checkBackupExists(email)
-                
-                if (backupExists) {
-                    Toast.makeText(context, "Restoring cloud backup...", Toast.LENGTH_SHORT).show()
-                    val result = backupViewModel.restoreFromDrive(context, email)
-                    if (result is com.bt.bttune.utils.DriveResult.Success) {
-                        Toast.makeText(context, "Cloud backup restored!", Toast.LENGTH_SHORT).show()
-                        
-                        delay(1500)
-                        context.stopService(android.content.Intent(context, com.bt.bttune.playback.MusicService::class.java))
-                        context.startActivity(android.content.Intent(context, com.bt.bttune.MainActivity::class.java).apply {
-                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        })
-                        Runtime.getRuntime().exit(0)
-                        return@launch
-                    } else {
-                        Toast.makeText(context, context.getString(R.string.restore_failed), Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    Toast.makeText(context, context.getString(R.string.creating_initial_cloud_backup), Toast.LENGTH_SHORT).show()
-                    val result = backupViewModel.backupToDrive(context, email, name)
-                    if (result is com.bt.bttune.utils.DriveResult.Success) {
-                        Toast.makeText(context, context.getString(R.string.google_account_linked_backup_created), Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(context, context.getString(R.string.backup_create_failed_account_linked), Toast.LENGTH_LONG).show()
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Toast.makeText(
-                    context,
-                    context.getString(
-                        R.string.google_account_linked_cloud_sync_failed,
-                        e.message.orEmpty()
-                    ),
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-    }
-
-    val googleSignInClient = remember {
-        com.bt.bttune.utils.GoogleAuthManager(context).getSignInClient()
-    }
-
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                .getResult(ApiException::class.java)
-            val email = account.email.orEmpty()
-            if (email.isBlank()) {
-                Toast.makeText(context, context.getString(R.string.google_email_missing), Toast.LENGTH_SHORT).show()
-                return@rememberLauncherForActivityResult
-            }
-            val name = account.displayName
-                ?.takeIf { it.isNotBlank() }
-                ?: account.givenName
-                ?: displayNameFromEmail(email)
-
-            isGoogleSignInOpen = false
-            linkGoogleAccount(name, email, account.photoUrl?.toString())
-        } catch (e: ApiException) {
-            e.printStackTrace()
-            val message = when (e.statusCode) {
-                GoogleSignInStatusCodes.SIGN_IN_CANCELLED ->
-                    context.getString(R.string.google_sign_in_cancelled)
-                GoogleSignInStatusCodes.SIGN_IN_CURRENTLY_IN_PROGRESS ->
-                    context.getString(R.string.google_sign_in_in_progress)
-                GoogleSignInStatusCodes.SIGN_IN_FAILED ->
-                    context.getString(R.string.google_sign_in_failed_oauth)
-                else -> context.getString(
-                    R.string.google_sign_in_failed_with_status,
-                    e.statusCode,
-                    e.message.orEmpty()
-                )
-            }
-            isGoogleSignInOpen = false
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            isGoogleSignInOpen = false
-            Toast.makeText(
-                context,
-                context.getString(R.string.google_sign_in_failed_message, e.message.orEmpty()),
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    fun requestGoogleSignIn() {
-        if (isGoogleSignInOpen) return
-        isGoogleSignInOpen = true
-        googleSignInClient.revokeAccess().addOnCompleteListener {
-            googleSignInLauncher.launch(googleSignInClient.signInIntent)
-        }
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 🎵 BLUR BACKGROUND
+        // Adaptive background: blurred song thumbnail when playing, Library mesh when no song playing
         val artworkUrl = mediaMetadata?.thumbnailUrl
-
-        artworkUrl?.let { imageUrl ->
-            com.bt.bttune.ui.component.BlurredBackground(
-                model = imageUrl
-            )
-
-            val isDarkTheme =
-                MaterialTheme.colorScheme.background.luminance() < 0.5f
-
-            val overlayBrush = if (isDarkTheme) {
-                Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.2f),
-                        Color.Black.copy(alpha = 0.5f),
-                        Color.Black.copy(alpha = 0.85f)
-                    )
-                )
-            } else {
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                        MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
-                    )
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(overlayBrush)
-            )
-        }
+        com.bt.bttune.ui.component.ScreenAdaptiveBackground(
+            artworkUrl = artworkUrl
+        )
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -401,9 +216,9 @@ fun AccountSettings(
                                     Text(
                                         if (isLoggedIn) {
                                             getAccountDisplayName.takeIf { it.isNotBlank() }
-                                                ?: stringResource(R.string.login)
+                                                ?: "Login to YouTube"
                                         } else {
-                                            stringResource(R.string.login)
+                                            "Login to YouTube"
                                         }
                                     )
                                 },
@@ -426,81 +241,12 @@ fun AccountSettings(
                                 },
                                 onClick = {
                                     if (!isLoggedIn)
-                                        navController.navigate("login")
+                                        navController.navigate("youtube_login")
                                 }
                             )
                         },
 
-                        // 🔹 CLOUD BACKUP ACCOUNT
-                        {
-                            if (isLoggedIn) {
-                                // Google Cloud Account (Legacy/Existing)
-                                PreferenceEntry(
-                                    title = {
-                                        Text(
-                                            if (currentGoogleEmail.isNotBlank()) currentGoogleEmail 
-                                            else stringResource(R.string.login_with_google)
-                                        )
-                                    },
-                                    description = if (currentGoogleEmail.isNotBlank()) {
-                                        stringResource(R.string.cloud_backup_stats_linked)
-                                    } else {
-                                        stringResource(R.string.link_account_for_cloud_backups)
-                                    },
-                                    icon = { Icon(painterResource(R.drawable.google), null, tint = androidx.compose.ui.graphics.Color.Unspecified) },
-                                    trailingContent = {
-                                        if (currentGoogleEmail.isNotBlank()) {
-                                            OutlinedButton(onClick = {
-                                                scope.launch {
-                                                    nameManager.saveAccountEmail("")
-                                                    Toast.makeText(context, context.getString(R.string.google_account_unlinked), Toast.LENGTH_SHORT).show()
-                                                }
-                                            }) {
-                                                Text(stringResource(R.string.logout))
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        if (currentGoogleEmail.isBlank()) {
-                                            requestGoogleSignIn()
-                                        }
-                                    }
-                                )
-                            } else {
-                                // Email Cloud Account (New)
-                                PreferenceEntry(
-                                    title = {
-                                        Text(
-                                            if (currentGoogleEmail.isNotBlank()) currentGoogleEmail 
-                                            else "Login with Email"
-                                        )
-                                    },
-                                    description = if (currentGoogleEmail.isNotBlank()) {
-                                        stringResource(R.string.cloud_backup_stats_linked)
-                                    } else {
-                                        "Link account for cloud backups"
-                                    },
-                                    icon = { Icon(painterResource(R.drawable.person), null) },
-                                    trailingContent = {
-                                        if (currentGoogleEmail.isNotBlank()) {
-                                            OutlinedButton(onClick = {
-                                                scope.launch {
-                                                    nameManager.saveAccountEmail("")
-                                                    Toast.makeText(context, "Account unlinked", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }) {
-                                                Text(stringResource(R.string.logout))
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        if (currentGoogleEmail.isBlank()) {
-                                            navController.navigate("login")
-                                        }
-                                    }
-                                )
-                            }
-                        },
+
 
                         // 🔹 ADVANCED LOGIN
                         {
@@ -562,6 +308,97 @@ fun AccountSettings(
                                 )
                             }
                         },
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Spotify Group
+                val hasSpotifyCookie by context.dataStore.data.map { it.contains(com.bt.bttune.constants.SpotifyCookieKey) }.collectAsState(initial = false)
+                SettingsGeneralCategory(
+                    title = "Spotify",
+                    items = listOf(
+                        {
+                            PreferenceEntry(
+                                title = { Text(if (hasSpotifyCookie) "Connected" else "Login to Spotify") },
+                                description = if (hasSpotifyCookie) "Connected to Spotify account" else "Sign in to see your feed and playlists",
+                                icon = { Icon(painterResource(R.drawable.music_note), null) },
+                                trailingContent = {
+                                    if (hasSpotifyCookie) {
+                                        OutlinedButton(onClick = {
+                                            scope.launch {
+                                                context.dataStore.edit { it.remove(com.bt.bttune.constants.SpotifyCookieKey) }
+                                            }
+                                        }) {
+                                            Text(stringResource(R.string.logout))
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    if (!hasSpotifyCookie) {
+                                        navController.navigate("spotify_login")
+                                    } else {
+                                        navController.navigate("spotify_account")
+                                    }
+                                }
+                            )
+                        }
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Discord Group
+                val discordToken by context.dataStore.data.map { it[DiscordTokenKey] ?: "" }.collectAsState(initial = "")
+                val hasDiscordToken = discordToken.isNotEmpty()
+                val (discordRPC, onDiscordRPCChange) = rememberPreference(
+                    key = EnableDiscordRPCKey,
+                    defaultValue = true
+                )
+
+                SettingsGeneralCategory(
+                    title = stringResource(R.string.discord_integration),
+                    items = listOf(
+                        {
+                            PreferenceEntry(
+                                title = { Text(if (hasDiscordToken) "Connected" else "Login to Discord") },
+                                description = if (hasDiscordToken) "Connected to Discord account" else "Sign in to enable Rich Presence",
+                                icon = { Icon(painterResource(R.drawable.discord), null) },
+                                trailingContent = {
+                                    if (hasDiscordToken) {
+                                        OutlinedButton(onClick = {
+                                            scope.launch {
+                                                context.dataStore.edit { 
+                                                    it.remove(DiscordTokenKey) 
+                                                    it[EnableDiscordRPCKey] = false
+                                                }
+                                            }
+                                        }) {
+                                            Text(stringResource(R.string.logout))
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    if (!hasDiscordToken) {
+                                        navController.navigate("settings/discord/login")
+                                    } else {
+                                        navController.navigate("settings/discord")
+                                    }
+                                }
+                            )
+                        },
+                        {
+                            if (hasDiscordToken) {
+                                SwitchPreference(
+                                    title = { Text(stringResource(R.string.enable_discord_rpc)) },
+                                    icon = {
+                                        Icon(painterResource(R.drawable.discord), null)
+                                    },
+                                    checked = discordRPC,
+                                    onCheckedChange = onDiscordRPCChange
+                                )
+                            }
+                        }
                     )
                 )
 
@@ -645,48 +482,189 @@ fun AccountSettings(
     }
 
     if (showTokenEditor) {
-        var cookieValue by remember { mutableStateOf(TextFieldValue(innerTubeCookie)) }
-        var visitorDataValue by remember { mutableStateOf(TextFieldValue(visitorData)) }
-
-        AlertDialog(
-            onDismissRequest = { showTokenEditor = false },
-            icon = { Icon(painterResource(R.drawable.token), null) },
-            title = { Text(stringResource(R.string.advanced_login)) },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = cookieValue,
-                        onValueChange = { cookieValue = it },
-                        label = { Text(stringResource(R.string.inner_tube_cookie)) },
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = visitorDataValue,
-                        onValueChange = { visitorDataValue = it },
-                        label = { Text(stringResource(R.string.visitor_data)) },
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onInnerTubeCookieChange(cookieValue.text)
-                        onVisitorDataChange(visitorDataValue.text)
-                        showTokenEditor = false
-                    }
-                ) {
-                    Text(stringResource(R.string.save))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showTokenEditor = false }
-                ) {
-                    Text(stringResource(R.string.cancel))
-                }
+        AdvancedTokenLoginDialog(
+            initialCookie = innerTubeCookie,
+            initialVisitorData = visitorData,
+            onDismiss = { showTokenEditor = false },
+            onSave = { newCookie, newVisitorData ->
+                onInnerTubeCookieChange(newCookie)
+                onVisitorDataChange(newVisitorData)
+                showTokenEditor = false
             }
         )
     }
 }
+
+@Composable
+fun AdvancedTokenLoginDialog(
+    initialCookie: String,
+    initialVisitorData: String,
+    onDismiss: () -> Unit,
+    onSave: (cookie: String, visitorData: String) -> Unit,
+) {
+    val existingCookies = remember(initialCookie) { parseCookieString(initialCookie) }
+    var useRawMode by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
+
+    var sapisid by remember { mutableStateOf(existingCookies["SAPISID"].orEmpty()) }
+    var hsid by remember { mutableStateOf(existingCookies["HSID"].orEmpty()) }
+    var ssid by remember { mutableStateOf(existingCookies["SSID"].orEmpty()) }
+    var sid by remember { mutableStateOf(existingCookies["SID"].orEmpty()) }
+    var loginInfo by remember { mutableStateOf(existingCookies["LOGIN_INFO"].orEmpty()) }
+    var rawCookie by remember { mutableStateOf(initialCookie) }
+    var visitorData by remember { mutableStateOf(initialVisitorData) }
+
+    val formattedCookie = remember(sapisid, hsid, ssid, sid, loginInfo, useRawMode, rawCookie) {
+        if (useRawMode) {
+            rawCookie.trim()
+        } else {
+            buildList {
+                if (sapisid.isNotBlank()) add("SAPISID=${sapisid.trim()}")
+                if (hsid.isNotBlank()) add("HSID=${hsid.trim()}")
+                if (ssid.isNotBlank()) add("SSID=${ssid.trim()}")
+                if (sid.isNotBlank()) add("SID=${sid.trim()}")
+                if (loginInfo.isNotBlank()) add("LOGIN_INFO=${loginInfo.trim()}")
+            }.joinToString("; ")
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(painterResource(R.drawable.token), contentDescription = null) },
+        title = { Text(stringResource(R.string.advanced_login)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // How-to guide accordion
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showHelp = !showHelp },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📖 How to get your cookies",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = if (showHelp) "▲" else "▼",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        if (showHelp) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "1. Open music.youtube.com in your PC browser (or Kiwi Browser) and log in.\n" +
+                                        "2. Press F12 -> Application tab -> Cookies -> https://music.youtube.com.\n" +
+                                        "3. Copy the values of SAPISID, HSID, SSID, SID, and LOGIN_INFO into the fields below.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Mode switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { useRawMode = !useRawMode }) {
+                        Text(
+                            text = if (useRawMode) "Switch to Individual Fields" else "Switch to Raw Cookie",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+
+                if (!useRawMode) {
+                    OutlinedTextField(
+                        value = sapisid,
+                        onValueChange = { sapisid = it },
+                        label = { Text("SAPISID (Required)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = hsid,
+                        onValueChange = { hsid = it },
+                        label = { Text("HSID (Required)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = ssid,
+                        onValueChange = { ssid = it },
+                        label = { Text("SSID (Required)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = sid,
+                        onValueChange = { sid = it },
+                        label = { Text("SID (Required)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = loginInfo,
+                        onValueChange = { loginInfo = it },
+                        label = { Text("LOGIN_INFO (Required)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = rawCookie,
+                        onValueChange = { rawCookie = it },
+                        label = { Text(stringResource(R.string.inner_tube_cookie)) },
+                        minLines = 3,
+                        maxLines = 6,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                OutlinedTextField(
+                    value = visitorData,
+                    onValueChange = { visitorData = it },
+                    label = { Text(stringResource(R.string.visitor_data) + " (Optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(formattedCookie, visitorData.trim())
+                }
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+
+
+

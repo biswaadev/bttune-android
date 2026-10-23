@@ -54,7 +54,9 @@ import com.bt.bttune.extensions.toMediaItem
 import com.bt.bttune.extensions.togglePlayPause
 import com.bt.bttune.playback.queues.ListQueue
 import com.bt.bttune.ui.component.ChipsRow
+import com.bt.bttune.ui.component.CreatePlaylistDialog
 import com.bt.bttune.ui.component.HideOnScrollFAB
+import com.bt.bttune.ui.component.LibraryFloatingActions
 import com.bt.bttune.ui.component.LocalMenuState
 import com.bt.bttune.ui.component.SongListItem
 import com.bt.bttune.ui.component.SortHeader
@@ -89,18 +91,10 @@ fun LibrarySongsScreen(
     val (ytmSync) = rememberPreference(YtmSyncKey, true)
 
     val songs by viewModel.allSongs.collectAsState()
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
 
     var filter by rememberEnumPreference(SongFilterKey, SongFilter.LIKED)
 
-    LaunchedEffect(Unit) {
-        if (ytmSync) {
-            when (filter) {
-                SongFilter.LIKED -> viewModel.syncLikedSongs()
-                SongFilter.LIBRARY -> viewModel.syncLibrarySongs()
-                else -> return@LaunchedEffect
-            }
-        }
-    }
 
     val wrappedSongs = songs.map { item -> ItemWrapper(item) }.toMutableList()
     var selection by remember {
@@ -138,11 +132,21 @@ fun LibrarySongsScreen(
                 contentType = CONTENT_TYPE_HEADER,
             ) {
                 Row {
-                    Spacer(Modifier.width(12.dp))
+                    val isFrosted = com.bt.bttune.ui.component.isFrostedGlassUiEnabled()
                     FilterChip(
                         label = { Text(stringResource(R.string.songs)) },
                         selected = true,
-                        colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surface),
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = if (isFrosted) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
+                            selectedContainerColor = if (isFrosted) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surface,
+                            labelColor = MaterialTheme.colorScheme.onSurface,
+                            selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        border = if (isFrosted) {
+                            androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f))
+                        } else {
+                            FilterChipDefaults.filterChipBorder(enabled = true, selected = true)
+                        },
                         onClick = onDeselect,
                         shape = RoundedCornerShape(16.dp),
                         leadingIcon = {
@@ -325,18 +329,18 @@ fun LibrarySongsScreen(
         }
         }
 
-        HideOnScrollFAB(
-            visible = songs.isNotEmpty() == true,
+        LibraryFloatingActions(
             lazyListState = lazyListState,
-            icon = R.drawable.shuffle,
-            onClick = {
-                playerConnection.playQueue(
-                    ListQueue(
-                        title = context.getString(R.string.queue_all_songs),
-                        items = songs.shuffled().map { it.toMediaItem() },
-                    ),
-                )
+            onOpenGenerator = {
+                navController.navigate("generator")
+            },
+            onCreatePlaylist = {
+                showCreatePlaylistDialog = true
             },
         )
+    }
+
+    if (showCreatePlaylistDialog) {
+        CreatePlaylistDialog(onDismiss = { showCreatePlaylistDialog = false })
     }
 }

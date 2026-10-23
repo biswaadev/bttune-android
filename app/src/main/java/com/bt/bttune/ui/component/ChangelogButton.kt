@@ -26,10 +26,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -164,8 +165,15 @@ fun ChangelogScreen(viewModel: ChangelogViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(ChangelogTab.RELEASES) }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadChangelog("batz-dev", "bttune-android")
+    val repoString = com.bt.bttune.utils.RemoteConfigManager.githubRepo.trim()
+    val repoParts = repoString.split("/")
+    val owner = repoParts.getOrNull(0)?.trim().orEmpty()
+    val repo = repoParts.getOrNull(1)?.trim().orEmpty()
+
+    LaunchedEffect(owner, repo) {
+        if (owner.isNotBlank() && repo.isNotBlank()) {
+            viewModel.loadChangelog(owner, repo)
+        }
     }
 
     Column(
@@ -194,7 +202,11 @@ fun ChangelogScreen(viewModel: ChangelogViewModel = viewModel()) {
                     isLoading = uiState.isLoadingReleases,
                     error = uiState.releasesError,
                     lastUpdated = uiState.lastUpdated,
-                    onRetry = { viewModel.loadChangelog("batz-dev", "bttune-android") }
+                    onRetry = {
+                        if (owner.isNotBlank() && repo.isNotBlank()) {
+                            viewModel.loadChangelog(owner, repo)
+                        }
+                    }
                 )
             }
 
@@ -204,7 +216,11 @@ fun ChangelogScreen(viewModel: ChangelogViewModel = viewModel()) {
                     isLoading = uiState.isLoadingCommits,
                     error = uiState.commitsError,
                     lastUpdated = uiState.lastUpdated,
-                    onRetry = { viewModel.loadChangelog("batz-dev", "bttune-android") }
+                    onRetry = {
+                        if (owner.isNotBlank() && repo.isNotBlank()) {
+                            viewModel.loadChangelog(owner, repo)
+                        }
+                    }
                 )
             }
         }
@@ -268,7 +284,7 @@ private fun ReleasesContent(
     onRetry: () -> Unit
 ) {
     when {
-        isLoading -> LoadingIndicator("Loading releases...")
+        isLoading -> ChangelogLoadingContent("Loading releases...")
         error != null -> ErrorContent(error, onRetry)
         releases.isEmpty() -> EmptyContent("No releases available")
         else -> SuccessReleasesContent(releases, lastUpdated)
@@ -284,15 +300,16 @@ private fun CommitsContent(
     onRetry: () -> Unit
 ) {
     when {
-        isLoading -> LoadingIndicator("Loading commits...")
+        isLoading -> ChangelogLoadingContent("Loading commits...")
         error != null -> ErrorContent(error, onRetry)
         commits.isEmpty() -> EmptyContent("No commits available")
         else -> SuccessCommitsContent(commits, lastUpdated)
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun LoadingIndicator(message: String) {
+private fun ChangelogLoadingContent(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -310,10 +327,7 @@ private fun LoadingIndicator(message: String) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.primary,
-                    strokeWidth = 3.dp
-                )
+                LoadingIndicator()
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium,
@@ -344,7 +358,7 @@ private fun ErrorContent(error: String, onRetry: () -> Unit) {
                 modifier = Modifier.size(24.dp)
             )
             Text(
-                text = "Error al cargar",
+                text = "Error loading",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
@@ -361,7 +375,7 @@ private fun ErrorContent(error: String, onRetry: () -> Unit) {
                     contentColor = MaterialTheme.colorScheme.onError
                 )
             ) {
-                Text("Reintentar")
+                Text("Retry")
             }
         }
     }
@@ -1086,7 +1100,7 @@ class ChangelogViewModel : ViewModel() {
             _uiState.update {
                 it.copy(
                     isLoadingReleases = false,
-                    releasesError = "Error al cargar releases: ${e.message}"
+                    releasesError = "Error loading releases: ${e.message}"
                 )
             }
         }
@@ -1125,7 +1139,7 @@ class ChangelogViewModel : ViewModel() {
             _uiState.update {
                 it.copy(
                     isLoadingCommits = false,
-                    commitsError = "Error al cargar commits: ${e.message}"
+                    commitsError = "Error loading commits: ${e.message}"
                 )
             }
         }
@@ -1248,3 +1262,5 @@ class ChangelogViewModel : ViewModel() {
         return formatter.format(Date())
     }
 }
+
+

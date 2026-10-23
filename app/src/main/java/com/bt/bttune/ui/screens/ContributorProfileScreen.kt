@@ -71,7 +71,7 @@ fun ContributorProfileScreen(
         launch { profile = client.getUserProfile(username) }
         launch { repos = client.getUserRepos(username) }
         launch { events = client.getUserEvents(username) }
-        launch { commits = client.getRepoCommits("batz-dev", "bttune-android", username) }
+        launch { commits = client.getRepoCommits("d0x-dev", "BTTUNE", username) }
         launch { readme = client.getProfileReadme(username) }
         isLoading = false
     }
@@ -152,12 +152,15 @@ fun ContributorProfileScreen(
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("Contributions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(8.dp))
+                            val contributionGraphRequest = remember(username) {
+                                ImageRequest.Builder(context)
+                                    .data("https://ghchart.rshah.org/1DB954/$username")
+                                    .crossfade(true)
+                                    .build()
+                            }
                             Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                                 AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data("https://ghchart.rshah.org/1DB954/$username")
-                                        .crossfade(true)
-                                        .build(),
+                                    model = contributionGraphRequest,
                                     imageLoader = svgImageLoader,
                                     contentDescription = "Contribution Graph",
                                     modifier = Modifier.height(100.dp)
@@ -167,7 +170,7 @@ fun ContributorProfileScreen(
                     }
                 }
 
-                // BTTUNE COMMITS
+                // AIRBEATS COMMITS
                 if (commits.isNotEmpty()) {
                     item {
                         Text("BTTUNE Commits", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

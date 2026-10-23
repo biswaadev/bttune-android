@@ -12,6 +12,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
+import com.bt.bttune.utils.AutoBackupManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,9 +45,11 @@ import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -90,6 +94,9 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -122,10 +129,16 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import com.bt.bttune.ui.component.CircleIconButton
+import com.bt.bttune.ui.component.SwipeBackContainer
+import com.bt.bttune.ui.component.tabSwipeGesture
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.bt.bttune.viewmodels.RingtoneViewModel
+import com.bt.bttune.ui.component.RingtoneTrimmerDialog
+import com.bt.bttune.ui.component.RingtoneProgressDialog
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -152,12 +165,16 @@ import androidx.core.util.Consumer
 import com.bt.bttune.utils.ExternalPlayerUtil
 import com.bt.bttune.utils.ListenTogetherSync
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import com.bt.bttune.constants.FullScreenModeKey
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -199,8 +216,8 @@ import com.bt.bttune.ui.component.AvatarSelection
 import com.bt.bttune.ui.component.BottomSheet
 import com.bt.bttune.ui.component.BottomSheetMenu
 import com.bt.bttune.ui.component.IconButton
-import com.bt.bttune.ui.component.CurvedBottomNavigationBar
 import com.bt.bttune.constants.LiquidGlassKey
+import com.bt.bttune.constants.FrostedGlassCardsButtonsKey
 import com.bt.bttune.constants.UseSystemFontKey
 import com.bt.bttune.constants.AppFont
 import com.bt.bttune.constants.AppFontKey
@@ -229,6 +246,8 @@ import com.bt.bttune.ui.menu.YouTubeSongMenu
 import com.bt.bttune.ui.player.BottomSheetPlayer
 import com.bt.bttune.ui.screens.HomeScreen
 import com.bt.bttune.ui.screens.Screens
+import com.bt.bttune.ui.screens.musicrecognition.ACTION_MUSIC_RECOGNITION
+import com.bt.bttune.ui.screens.musicrecognition.openMusicRecognition
 import com.bt.bttune.ui.screens.navigationBuilder
 import com.bt.bttune.ui.screens.search.LocalSearchScreen
 import com.bt.bttune.ui.screens.search.OnlineSearchScreen
@@ -239,10 +258,13 @@ import com.bt.bttune.ui.theme.DefaultThemeColor
 import com.bt.bttune.ui.theme.BTTUNETheme
 import com.bt.bttune.ui.theme.extractThemeColor
 import com.bt.bttune.ui.utils.appBarScrollBehavior
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
+import com.bt.bttune.constants.ReduceAnimationsKey
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
 import com.bt.bttune.ui.utils.backToMain
 import com.bt.bttune.ui.utils.resetHeightOffset
+import com.bt.bttune.ui.component.UpdateAvailableDialog
+import com.bt.bttune.utils.UpdateInfo
 import com.bt.bttune.utils.SyncUtils
 import com.bt.bttune.utils.Updater
 import com.bt.bttune.utils.dataStore
@@ -283,7 +305,7 @@ import kotlinx.coroutines.isActive
 
 @Suppress("DEPRECATION", "ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     @Inject
     lateinit var database: MusicDatabase
 
@@ -295,6 +317,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var namePreferenceManager: NamePreferenceManager
+
+    @Inject
+    lateinit var lastFmAuthCallbackCoordinator: com.bt.bttune.data.repository.LastFmAuthCallbackCoordinator
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
     private var isServiceBound = false
@@ -317,18 +342,31 @@ class MainActivity : ComponentActivity() {
         }
 
     private var latestVersionName by mutableStateOf<String>(BuildConfig.VERSION_NAME)
+    private val pendingIntentFlow = kotlinx.coroutines.flow.MutableStateFlow<Intent?>(null)
 
     override fun onStart() {
         super.onStart()
         com.bt.bttune.playback.AppForegroundTracker.isForeground = true
-        startService(Intent(this, MusicService::class.java))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            runCatching {
+                startService(Intent(this, MusicService::class.java))
+            }.onFailure { Timber.e(it, "Failed to start MusicService from MainActivity") }
+        }
         if (!isServiceBound) {
-            bindService(
-                Intent(this, MusicService::class.java),
-                serviceConnection,
-                Context.BIND_AUTO_CREATE
-            )
-            isServiceBound = true
+            runCatching {
+                bindService(
+                    Intent(this, MusicService::class.java),
+                    serviceConnection,
+                    Context.BIND_AUTO_CREATE
+                )
+            }.onSuccess { isServiceBound = it }
+             .onFailure { Timber.e(it, "Failed to bind MusicService from MainActivity") }
+        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching {
+                database.checkpoint()
+                android.app.backup.BackupManager(this@MainActivity).dataChanged()
+            }
         }
     }
 
@@ -337,6 +375,12 @@ class MainActivity : ComponentActivity() {
         if (isServiceBound) {
             unbindService(serviceConnection)
             isServiceBound = false
+        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching {
+                database.checkpoint()
+                android.app.backup.BackupManager(this@MainActivity).dataChanged()
+            }
         }
         super.onStop()
     }
@@ -357,11 +401,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (dataStore.get(
-                StopMusicOnTaskClearKey,
-                false
-            ) && playerConnection?.isPlaying?.value == true && isFinishing
-        ) {
+        val stopOnTaskClear = (com.bt.bttune.utils.dataStoreCache[StopMusicOnTaskClearKey.name] as? Boolean)
+            ?: dataStore.get(StopMusicOnTaskClearKey, false)
+        if (stopOnTaskClear && playerConnection?.isPlaying?.value == true && isFinishing) {
             stopService(Intent(this, MusicService::class.java))
         }
         playerConnection = null
@@ -373,12 +415,20 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        lastFmAuthCallbackCoordinator.capture(intent)
+        pendingIntentFlow.value = intent
+    }
+
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+        pendingIntentFlow.value = intent
+        lastFmAuthCallbackCoordinator.capture(intent)
 
         // 🔔 Notification permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -408,8 +458,55 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+        // 🔥 Version-specific FCM topic synchronization & auto-cleanup of outdated versions
+        val versionName = BuildConfig.VERSION_NAME
+        val fcmPrefs = getSharedPreferences("airbeats_fcm_prefs", Context.MODE_PRIVATE)
+        val lastSubscribedVersion = fcmPrefs.getString("last_subscribed_version", null)
+
+        if (!lastSubscribedVersion.isNullOrBlank() && lastSubscribedVersion != versionName) {
+            FirebaseMessaging.getInstance().unsubscribeFromTopic(lastSubscribedVersion)
+                .addOnSuccessListener {
+                    Log.d("FCM", "Unsubscribed from outdated version topic: $lastSubscribedVersion")
+                }
+            FirebaseMessaging.getInstance().unsubscribeFromTopic("v$lastSubscribedVersion")
+            FirebaseMessaging.getInstance().unsubscribeFromTopic("${lastSubscribedVersion}-nightly")
+            FirebaseMessaging.getInstance().unsubscribeFromTopic("v${lastSubscribedVersion}-nightly")
+        }
+
+        // Proactively unsubscribe from legacy version tags if updating from older releases
+        val legacyVersions = listOf(
+            "6.0.0", "6.0.1", "6.0.2", "6.0.3", "6.0.4", "6.1.0", "6.1.1", "6.1.2"
+        )
+        for (legacy in legacyVersions) {
+            if (legacy != versionName) {
+                FirebaseMessaging.getInstance().unsubscribeFromTopic(legacy)
+                FirebaseMessaging.getInstance().unsubscribeFromTopic("v$legacy")
+                FirebaseMessaging.getInstance().unsubscribeFromTopic("$legacy-nightly")
+                FirebaseMessaging.getInstance().unsubscribeFromTopic("v$legacy-nightly")
+            }
+        }
+
+        FirebaseMessaging.getInstance().subscribeToTopic(versionName)
+            .addOnCompleteListener {
+                if (it.isSuccessful) {
+                    Log.d("FCM", "Subscribed to $versionName")
+                    fcmPrefs.edit().putString("last_subscribed_version", versionName).apply()
+                }
+            }
+
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_LTR
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
 
         lifecycleScope.launch {
             dataStore.data
@@ -427,15 +524,39 @@ class MainActivity : ComponentActivity() {
                 }
         }
 
+        lifecycleScope.launch {
+            dataStore.data
+                .map { (try { it[com.bt.bttune.constants.AiRecommendationsKey] } catch (e: Exception) { null }) ?: false }
+                .distinctUntilChanged()
+                .collectLatest { enabled ->
+                    val workManager = androidx.work.WorkManager.getInstance(this@MainActivity)
+                    if (enabled) {
+                        val request = androidx.work.PeriodicWorkRequestBuilder<com.bt.bttune.ai.AiRecommendationWorker>(1, java.util.concurrent.TimeUnit.DAYS)
+                            .setConstraints(
+                                androidx.work.Constraints.Builder()
+                                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                                    .build()
+                            )
+                            .build()
+                        workManager.enqueueUniquePeriodicWork(
+                            "AiRecommendationWorker",
+                            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+                            request
+                        )
+                    } else {
+                        workManager.cancelUniqueWork("AiRecommendationWorker")
+                    }
+                }
+        }
 
         setContent {
-            var showLaunchUpdateDialog by rememberSaveable { mutableStateOf(false) }
-
+            var updateInfoState by remember { mutableStateOf<UpdateInfo?>(null) }
+            
             LaunchedEffect(Unit) {
-                Updater.getLatestVersionName().onSuccess { version ->
-                    latestVersionName = version
-                    if (com.bt.bttune.ui.screens.settings.isNewerVersion(version, BuildConfig.VERSION_NAME)) {
-                        showLaunchUpdateDialog = true
+                Updater.getLatestUpdateInfo().onSuccess { info ->
+                    latestVersionName = info.versionName
+                    if (info.versionName.isNotBlank() && com.bt.bttune.utils.VersionUtils.isVersionGreater(info.versionName, BuildConfig.VERSION_NAME)) {
+                        updateInfoState = info
                     }
                 }
             }
@@ -443,9 +564,17 @@ class MainActivity : ComponentActivity() {
             val isNameSet by namePreferenceManager.isNameSet.collectAsState(initial = null)
             var showSplash by remember { mutableStateOf(true) }
 
-            LaunchedEffect(isNameSet) {
-                if (isNameSet != null) {
-                    delay(1500)
+            LaunchedEffect(Unit) {
+                AutoBackupManager.resetRestartAttempts(this@MainActivity)
+                delay(1000)
+                showSplash = false
+            }
+
+            // Fail-safe watchdog: ensure splash screen never hangs permanently
+            LaunchedEffect(Unit) {
+                delay(3000)
+                if (showSplash) {
+                    timber.log.Timber.w("Splash screen safety watchdog triggered: auto-dismissing splash")
                     showSplash = false
                 }
             }
@@ -457,33 +586,28 @@ class MainActivity : ComponentActivity() {
             val backupViewModel = com.bt.bttune.ui.utils.safeHiltViewModel<com.bt.bttune.viewmodels.BackupRestoreViewModel>()
             val context = androidx.compose.ui.platform.LocalContext.current
             val userName by namePreferenceManager.userName.collectAsState(initial = "BTTUNE User")
-            
-            LaunchedEffect(effectiveEmail, userName) {
-                val automaticCloudBackupEnabled = context
-                    .getSharedPreferences("backup_settings", android.content.Context.MODE_PRIVATE)
-                    .getBoolean("enable_cloud_upload", true)
-
-                if (automaticCloudBackupEnabled && effectiveEmail.isNotBlank() && backupViewModel != null) {
-                    val now = System.currentTimeMillis()
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        val result = backupViewModel.backupToDrive(context, effectiveEmail, userName)
-                        if (result is com.bt.bttune.utils.DriveResult.Success) {
-                            setLastBackupTimestamp(now)
-                        }
-                    }
-                }
-            }
-
             var showFullscreenLyrics by remember { mutableStateOf(false) }
 
-            val playerScreenStyle by rememberEnumPreference<PlayerScreenStyle>(PlayerScreenStyleKey, defaultValue = PlayerScreenStyle.SPOTIFY)
+            val playerScreenStyle by rememberEnumPreference<PlayerScreenStyle>(PlayerScreenStyleKey, defaultValue = PlayerScreenStyle.IOS_STYLED)
             val homeScreenStyle by rememberEnumPreference(HomeScreenStyleKey, defaultValue = HomeScreenStyle.CLASSIC)
             val navBarStyle by rememberEnumPreference(NavBarStyleKey, defaultValue = NavBarStyle.APPLE)
+            val isBetterNavBar = navBarStyle == NavBarStyle.BETTER
             val enableNewLyricsScreen by rememberPreference(com.bt.bttune.constants.EnableNewLyricsScreenKey, defaultValue = true)
+            val lyricsScreenStyle by rememberEnumPreference(com.bt.bttune.constants.LyricsScreenStyleKey, defaultValue = com.bt.bttune.constants.LyricsScreenStyle.LYRICS_2)
 
             val enableDynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
+            val themeAccentColor by rememberPreference(com.bt.bttune.constants.ThemeAccentColorKey, defaultValue = 0xFF4285F4.toInt())
+            val themeColorEffectKey by rememberPreference(com.bt.bttune.constants.ThemeColorEffectKey, defaultValue = com.bt.bttune.constants.ThemeColorEffect.NONE.name)
+            val themeColorEffect = remember(themeColorEffectKey) {
+                try {
+                    com.bt.bttune.constants.ThemeColorEffect.valueOf(themeColorEffectKey)
+                } catch (e: Exception) {
+                    com.bt.bttune.constants.ThemeColorEffect.NONE
+                }
+            }
             val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
             val enableLiquidGlass by rememberPreference(LiquidGlassKey, defaultValue = false)
+            val frostedGlassCardsButtons by rememberPreference(FrostedGlassCardsButtonsKey, defaultValue = true)
 
             val pureBlack by rememberPreference(PureBlackKey, defaultValue = false)
             val appFontKey by rememberPreference(AppFontKey, defaultValue = AppFont.LINOTTE.key)
@@ -491,30 +615,88 @@ class MainActivity : ComponentActivity() {
             val isPlayful = homeScreenStyle == HomeScreenStyle.PLAYFUL
             val isSystemInDarkTheme = isSystemInDarkTheme()
             val useDarkTheme =
-                remember(darkTheme, isSystemInDarkTheme, enableLiquidGlass, isPlayful) {
+                remember(darkTheme, isSystemInDarkTheme, enableLiquidGlass, frostedGlassCardsButtons, isPlayful) {
                     if (isPlayful) {
                         false
-                    } else if (enableLiquidGlass) {
+                    } else if (enableLiquidGlass || frostedGlassCardsButtons) {
                         true
                     } else {
                         if (darkTheme == DarkMode.AUTO) isSystemInDarkTheme else darkTheme == DarkMode.ON
                     }
                 }
-            LaunchedEffect(useDarkTheme) {
-                setSystemBarAppearance(useDarkTheme)
+            val fullScreenMode by rememberPreference(FullScreenModeKey, defaultValue = false)
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+            DisposableEffect(lifecycleOwner, fullScreenMode, useDarkTheme) {
+                val applyFullScreen = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        window.attributes = window.attributes.apply {
+                            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                        }
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        window.attributes = window.attributes.apply {
+                            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                        }
+                    }
+                    window.statusBarColor = android.graphics.Color.TRANSPARENT
+                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                    WindowCompat.setDecorFitsSystemWindows(window, false)
+                    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                    insetsController.isAppearanceLightStatusBars = !useDarkTheme
+                    insetsController.isAppearanceLightNavigationBars = !useDarkTheme
+                }
+
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        if (fullScreenMode) {
+                            applyFullScreen()
+                        } else {
+                            setSystemBarAppearance(useDarkTheme)
+                        }
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+
+                if (fullScreenMode) {
+                    applyFullScreen()
+                } else {
+                    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.show(WindowInsetsCompat.Type.systemBars())
+                    setSystemBarAppearance(useDarkTheme)
+                }
+
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                    if (fullScreenMode) {
+                        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                        insetsController.show(WindowInsetsCompat.Type.systemBars())
+                        setSystemBarAppearance(useDarkTheme)
+                    }
+                }
             }
-            var themeColor by rememberSaveable(stateSaver = ColorSaver) {
+            val (isVoiceAssistantEnabled) = rememberPreference(com.bt.bttune.constants.EnableVoiceAssistantKey, defaultValue = false)
+            LaunchedEffect(isVoiceAssistantEnabled) {
+                if (isVoiceAssistantEnabled) {
+                    runCatching { com.bt.bttune.voice.VoiceAssistantService.start(this@MainActivity) }
+                } else {
+                    runCatching { com.bt.bttune.voice.VoiceAssistantService.stop(this@MainActivity) }
+                }
+            }
+            var dynamicColor by rememberSaveable(stateSaver = ColorSaver) {
                 mutableStateOf(DefaultThemeColor)
             }
 
             LaunchedEffect(playerConnection, enableDynamicTheme, isSystemInDarkTheme) {
                 val playerConnection = playerConnection
                 if (!enableDynamicTheme || playerConnection == null) {
-                    themeColor = DefaultThemeColor
+                    dynamicColor = DefaultThemeColor
                     return@LaunchedEffect
                 }
                 playerConnection.service.currentMediaMetadata.collectLatest { song ->
-                    themeColor =
+                    dynamicColor =
                         if (song != null) {
                             withContext(Dispatchers.IO) {
                                 val result =
@@ -534,11 +716,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val effectiveThemeColor = if (enableDynamicTheme) dynamicColor else Color(themeAccentColor)
+
             BTTUNETheme(
                 darkTheme = useDarkTheme,
-                pureBlack = pureBlack && !enableLiquidGlass && !isPlayful,
+                pureBlack = pureBlack && !enableLiquidGlass && !frostedGlassCardsButtons && !isPlayful,
                 appFont = appFont,
-                themeColor = themeColor,
+                themeColor = effectiveThemeColor,
+                colorEffect = themeColorEffect,
+                enableDynamicTheme = enableDynamicTheme,
             ) {
                 val rankPrefMgr = remember { RankPreferenceManager(this@MainActivity) }
                 val lastSeenRank by rankPrefMgr.lastSeenRank.collectAsState(initial = null)
@@ -571,7 +757,7 @@ class MainActivity : ComponentActivity() {
                 val backdrop = rememberBackdrop()
 
                 if (showSplash) {
-                    HeadphoneSplashScreen()
+                    HeadphoneSplashScreen(statusText = null)
                 } else {
 
                     NameProvider(
@@ -595,16 +781,21 @@ class MainActivity : ComponentActivity() {
                             val (previousTab) = rememberSaveable { mutableStateOf("home") }
 
                             val navigationItems = remember(homeScreenStyle, navBarStyle, enableLiquidGlass) { 
-                                when (navBarStyle) {
-                                    NavBarStyle.CLASSIC -> listOf(Screens.Home, Screens.Explore, Screens.Library)
-                                    NavBarStyle.LIQUID_GLASS -> listOf(Screens.Home, Screens.Explore, Screens.Library)
-                                    NavBarStyle.SPOTIFY -> listOf(Screens.Home, Screens.Search, Screens.Explore, Screens.Library)
-                                    NavBarStyle.APPLE -> listOf(Screens.Home, Screens.Stats, Screens.Explore, Screens.Library, Screens.Search)
-                                    NavBarStyle.NEW_CLASSIC -> listOf(Screens.Home, Screens.Search, Screens.Explore, Screens.Library)
-                                    else -> listOf(Screens.Home, Screens.Explore, Screens.Library)
+                                if (navBarStyle == NavBarStyle.LIQUID_GLASS || enableLiquidGlass || isBetterNavBar) {
+                                    listOf(Screens.Home, Screens.Search, Screens.Explore, Screens.Library)
+                                } else {
+                                    when (navBarStyle) {
+                                        NavBarStyle.LIQUID_GLASS -> listOf(Screens.Home, Screens.Search, Screens.Explore, Screens.Library)
+                                        NavBarStyle.SPOTIFY -> listOf(Screens.Home, Screens.Search, Screens.Explore, Screens.Library)
+                                        NavBarStyle.APPLE -> listOf(Screens.Home, Screens.Stats, Screens.Explore, Screens.Library, Screens.Search)
+                                        NavBarStyle.NEW_CLASSIC -> listOf(Screens.Home, Screens.Search, Screens.Explore, Screens.Library)
+                                        NavBarStyle.MATERIAL -> listOf(Screens.Home, Screens.Explore, Screens.Library, Screens.Search)
+                                        NavBarStyle.BETTER -> listOf(Screens.Home, Screens.Search, Screens.Explore, Screens.Library)
+                                    }
                                 }
                             }
                             val (slimNav) = rememberPreference(SlimNavBarKey, defaultValue = false)
+                            val (reduceAnimations) = rememberPreference(ReduceAnimationsKey, defaultValue = false)
                             val defaultOpenTab by rememberEnumPreference(
                                 DefaultOpenTabKey,
                                 defaultValue = NavigationTab.HOME,
@@ -618,11 +809,27 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
+                            val initialTab = tabOpenedFromShortcut ?: defaultOpenTab
+                            val initialScreen = when (initialTab) {
+                                NavigationTab.HOME -> Screens.Home
+                                NavigationTab.EXPLORE -> Screens.Explore
+                                NavigationTab.LIBRARY -> Screens.Library
+                            }
+                            val initialPageIndex = remember(navigationItems) {
+                                navigationItems.indexOf(initialScreen).takeIf { it >= 0 } ?: 0
+                            }
+                            val rootPagerState = rememberPagerState(
+                                initialPage = initialPageIndex,
+                                pageCount = { navigationItems.size }
+                            )
+
                             val topLevelScreens =
                                 listOf(
                                     Screens.Home.route,
                                     Screens.Explore.route,
                                     Screens.Library.route,
+                                    Screens.Search.route,
+                                    Screens.Stats.route,
                                     "settings",
                                 )
 
@@ -648,14 +855,17 @@ class MainActivity : ComponentActivity() {
                             var searchSource by rememberEnumPreference(SearchSourceKey, SearchSource.ONLINE)
 
                             val searchBarFocusRequester = remember { FocusRequester() }
+                            val pauseSearchHistory by rememberPreference(PauseSearchHistoryKey, defaultValue = false)
 
                             val onSearch: (String) -> Unit = {
                                 if (it.isNotEmpty()) {
                                     onActiveChange(false)
                                     navController.navigate("search/${URLEncoder.encode(it, "UTF-8")}")
-                                    if (dataStore[PauseSearchHistoryKey] != true) {
+                                    val isPaused = (com.bt.bttune.utils.dataStoreCache[PauseSearchHistoryKey.name] as? Boolean)
+                                        ?: pauseSearchHistory
+                                    if (!isPaused && it.isNotBlank()) {
                                         database.query {
-                                            insert(SearchHistory(query = it))
+                                            insert(SearchHistory(query = it.trim()))
                                         }
                                     }
                                 }
@@ -674,21 +884,22 @@ class MainActivity : ComponentActivity() {
 
                             val shouldShowNavigationBar =
                                 remember(navBackStackEntry, active) {
-                                    navBackStackEntry?.destination?.route == null ||
-                                            navigationItems.fastAny { it.route == navBackStackEntry?.destination?.route } &&
+                                    val route = navBackStackEntry?.destination?.route
+                                    route != null &&
+                                            navigationItems.fastAny { it.route == route } &&
                                             !active
                                 }
 
                             val navigationBarHeight by animateDpAsState(
                                 targetValue = if (shouldShowNavigationBar) NavigationBarHeight else 0.dp,
-                                animationSpec = NavigationBarAnimationSpec,
+                                animationSpec = if (reduceAnimations) snap() else NavigationBarAnimationSpec,
                                 label = "",
                             )
 
                             val playerBottomSheetState =
                                 rememberBottomSheetState(
                                     dismissedBound = 0.dp,
-                                    collapsedBound = bottomInset + (if (shouldShowNavigationBar) NavigationBarHeight - 16.dp else 0.dp) + MiniPlayerHeight,
+                                    collapsedBound = bottomInset + (if (shouldShowNavigationBar && !isBetterNavBar) NavigationBarHeight - 16.dp else 0.dp) + MiniPlayerHeight,
                                     expandedBound = maxHeight,
                                 )
 
@@ -696,10 +907,11 @@ class MainActivity : ComponentActivity() {
                                 remember(
                                     bottomInset,
                                     shouldShowNavigationBar,
+                                    isBetterNavBar,
                                     playerBottomSheetState.isDismissed
                                 ) {
                                     var bottom = bottomInset
-                                    if (shouldShowNavigationBar) bottom += NavigationBarHeight - 16.dp
+                                    if (shouldShowNavigationBar && !isBetterNavBar) bottom += NavigationBarHeight - 16.dp
                                     if (!playerBottomSheetState.isDismissed) bottom += MiniPlayerHeight
                                     windowsInsets
                                         .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
@@ -833,7 +1045,7 @@ class MainActivity : ComponentActivity() {
                                         val uri = intent.data ?: intent.extras?.getString(Intent.EXTRA_TEXT)
                                             ?.toUri() ?: return@Consumer
                                         
-                                        if (uri.host == "listentogether.bttune.app") {
+                                        if (com.bt.bttune.utils.RemoteConfigManager.isMatchingListenTogetherDomain(uri.host)) {
                                             val code = uri.getQueryParameter("code")
                                             if (code != null) {
                                                 ListenTogetherSync.joinSession(code)
@@ -879,8 +1091,8 @@ class MainActivity : ComponentActivity() {
                                                 when {
                                                     path == "watch" -> uri.getQueryParameter("v")
                                                     uri.host == "youtu.be" -> path
-                                                    uri.host == "play.bttune.app" && path == "song" -> uri.getQueryParameter("id")
-                                                    uri.host == "play.bttune.app" -> path
+                                                    com.bt.bttune.utils.RemoteConfigManager.isMatchingPlayDomain(uri.host) && path == "song" -> uri.getQueryParameter("id")
+                                                    com.bt.bttune.utils.RemoteConfigManager.isMatchingPlayDomain(uri.host) -> path
                                                     else -> null
                                                 }?.let { videoId ->
                                                     coroutineScope.launch {
@@ -923,6 +1135,7 @@ class MainActivity : ComponentActivity() {
                             }
                             val baseBg = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainer
                             val insetBg = if (playerBottomSheetState.progress > 0f) Color.Transparent else baseBg
+                            val ringtoneViewModel: RingtoneViewModel = viewModel()
 
                             CompositionLocalProvider(
                                 LocalDatabase provides database,
@@ -933,6 +1146,7 @@ class MainActivity : ComponentActivity() {
                                 LocalShimmerTheme provides ShimmerTheme,
                                 LocalSyncUtils provides syncUtils,
                                 LocalBackdrop provides backdrop,
+                                LocalRingtoneViewModel provides ringtoneViewModel,
                             ) {
                                 var showRealNavBar by remember { mutableStateOf(false) }
                                 var playIntroAnimation by remember { mutableStateOf(true) }
@@ -1128,9 +1342,11 @@ class MainActivity : ComponentActivity() {
                                                                 try {
                                                                     val encodedQuery = URLEncoder.encode(searchQuery, "UTF-8")
                                                                     navController.navigate("search/$encodedQuery")
-                                                                    if (dataStore[PauseSearchHistoryKey] != true) {
+                                                                    val isPaused = (com.bt.bttune.utils.dataStoreCache[PauseSearchHistoryKey.name] as? Boolean)
+                                                                        ?: pauseSearchHistory
+                                                                    if (!isPaused && searchQuery.isNotBlank()) {
                                                                         database.query {
-                                                                            insert(SearchHistory(query = searchQuery))
+                                                                            insert(SearchHistory(query = searchQuery.trim()))
                                                                         }
                                                                     }
                                                                 } catch (e: Exception) {
@@ -1236,7 +1452,7 @@ class MainActivity : ComponentActivity() {
                                                             },
                                                             modifier = Modifier.fillMaxSize()
                                                         )
-                                                    } else if (enableNewLyricsScreen && playerScreenStyle != PlayerScreenStyle.GALAXY) {
+                                                    } else if (lyricsScreenStyle == com.bt.bttune.constants.LyricsScreenStyle.LYRICS_2 && playerScreenStyle != PlayerScreenStyle.GALAXY) {
                                                         com.bt.bttune.ui.player.BTTUNELyricsScreen(
                                                             mediaMetadata = mediaMetadata!!,
                                                             navController = navController,
@@ -1269,192 +1485,229 @@ class MainActivity : ComponentActivity() {
                                             val isTabletLandscape = configuration.screenWidthDp >= 600 &&
                                                     configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+                                            val offsetY by animateDpAsState(
+                                                targetValue = if (playIntroAnimation) 120.dp else 0.dp,
+                                                animationSpec = tween(600),
+                                                label = "nav_offset"
+                                            )
+
+                                            val scale by animateFloatAsState(
+                                                targetValue = if (playIntroAnimation) 0.3f else 1f,
+                                                animationSpec = tween(600),
+                                                label = "nav_scale"
+                                            )
+
+                                            val alpha by animateFloatAsState(
+                                                targetValue = if (playIntroAnimation) 0.6f else 1f,
+                                                animationSpec = tween(600),
+                                                label = "nav_alpha"
+                                            )
+
+                                            val curvedItems = navigationItems.map { screen ->
+                                                CurvedBottomNavigationItem(
+                                                    iconInactive = screen.iconIdInactive,
+                                                    iconActive = screen.iconIdActive,
+                                                    titleId = screen.titleId
+                                                )
+                                            }
+
+                                            val currentDestRoute = navBackStackEntry?.destination?.route
+                                            val selectedIndex = if (currentDestRoute == Screens.Home.route) {
+                                                rootPagerState.currentPage.coerceIn(0, navigationItems.lastIndex)
+                                            } else {
+                                                navigationItems.indexOfFirst { screen ->
+                                                    navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true
+                                                }.takeIf { it >= 0 } ?: 0
+                                            }
+
+                                            var lastTapTime by remember { mutableLongStateOf(0L) }
+                                            var lastTappedIcon by remember { mutableStateOf<Int?>(null) }
+                                            var navigateToExplore by remember { mutableStateOf(false) }
+
+                                            val onItemSelectedAction: (Int) -> Unit = { index ->
+                                                 if (index in navigationItems.indices) {
+                                                     val screen = navigationItems[index]
+                                                     val isSelected = if (currentDestRoute == Screens.Home.route) {
+                                                         rootPagerState.currentPage == index
+                                                     } else {
+                                                         screen.route == currentDestRoute
+                                                     }
+
+                                                     val currentTapTime = System.currentTimeMillis()
+                                                     val timeSinceLastTap = currentTapTime - lastTapTime
+                                                     val isDoubleTap =
+                                                         screen.titleId == R.string.explore &&
+                                                                 lastTappedIcon == R.string.explore &&
+                                                                 timeSinceLastTap < 300L
+
+                                                     lastTapTime = currentTapTime
+                                                     lastTappedIcon = screen.titleId
+
+                                                     if (screen.titleId == R.string.explore && navBarStyle != NavBarStyle.MATERIAL) {
+                                                         if (isDoubleTap) {
+                                                             onActiveChange(true)
+                                                             navigateToExplore = false
+                                                         } else {
+                                                             navigateToExplore = true
+                                                             coroutineScope.launch {
+                                                                 delay(300L)
+                                                                 if (navigateToExplore) {
+                                                                     if (currentDestRoute == Screens.Home.route) {
+                                                                         rootPagerState.animateScrollToPage(index)
+                                                                     } else {
+                                                                         navigateToScreen(navController, Screens.Home)
+                                                                         rootPagerState.scrollToPage(index)
+                                                                     }
+                                                                 }
+                                                             }
+                                                         }
+                                                     } else {
+                                                         if (isSelected) {
+                                                             navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
+                                                             coroutineScope.launch {
+                                                                 searchBarScrollBehavior.state.resetHeightOffset()
+                                                             }
+                                                         } else {
+                                                             if (currentDestRoute == Screens.Home.route) {
+                                                                 coroutineScope.launch {
+                                                                     rootPagerState.animateScrollToPage(index)
+                                                                 }
+                                                             } else {
+                                                                 navigateToScreen(navController, Screens.Home)
+                                                                 coroutineScope.launch {
+                                                                     rootPagerState.scrollToPage(index)
+                                                                 }
+                                                             }
+                                                         }
+                                                     }
+                                                 }
+                                             }
+
                                             val shouldShowBottomNav =
                                                 shouldShowNavigationBar &&
                                                         playerBottomSheetState.progress < 0.95f &&
-                                                        !isPlayfulHome
+                                                        !isPlayfulHome &&
+                                                        !isBetterNavBar
+
+                                            val shouldShowBetterSideNav =
+                                                shouldShowNavigationBar &&
+                                                        playerBottomSheetState.progress < 0.95f &&
+                                                        !isAuthScreen &&
+                                                        isBetterNavBar
 
                                             if (shouldShowBottomNav) {
 
                                                 Box(
                                                     modifier = Modifier
                                                         .align(Alignment.BottomCenter)
-                                                        .then(if (navBarStyle != NavBarStyle.SPOTIFY && navBarStyle != NavBarStyle.NEON) Modifier.navigationBarsPadding() else Modifier)
+                                                        .then(if (navBarStyle != NavBarStyle.SPOTIFY) Modifier.navigationBarsPadding() else Modifier)
                                                         .then(
-                                                            if (navBarStyle == NavBarStyle.SPOTIFY || navBarStyle == NavBarStyle.NEON) {
+                                                            if (navBarStyle == NavBarStyle.SPOTIFY) {
                                                                 Modifier.fillMaxWidth()
                                                                     .height(NavigationBarHeight - 16.dp + bottomInset)
                                                             } else {
                                                                 Modifier
                                                                     .padding(bottom = 6.dp)
-                                                                    .fillMaxWidth(0.88f)
+                                                                    .fillMaxWidth(if (navBarStyle == NavBarStyle.MATERIAL) 0.94f else 0.88f)
                                                                     .height(NavigationBarHeight - 16.dp)
                                                             }
                                                         ),
                                                     contentAlignment = Alignment.Center
                                                 ) {
 
-                                                    val offsetY by animateDpAsState(
-                                                        targetValue = if (playIntroAnimation) 120.dp else 0.dp,
-                                                        animationSpec = tween(600),
-                                                        label = "nav_offset"
-                                                    )
-
-                                                    val scale by animateFloatAsState(
-                                                        targetValue = if (playIntroAnimation) 0.3f else 1f,
-                                                        animationSpec = tween(600),
-                                                        label = "nav_scale"
-                                                    )
-
-                                                    val alpha by animateFloatAsState(
-                                                        targetValue = if (playIntroAnimation) 0.6f else 1f,
-                                                        animationSpec = tween(600),
-                                                        label = "nav_alpha"
-                                                    )
-
-                                                    // ═══════════════════════════════════════════════════════
-                                                    // LIQUID GLASS NAV BAR — works on both dark & light themes
-                                                    // Strategy:
-                                                    //   • BLUR layer  — Android 12+ real blur, older = tinted fallback
-                                                    //   • TINT layer  — semi-transparent surface tint (adapts to theme)
-                                                    //   • HIGHLIGHT   — white-to-transparent vertical gradient (top sheen)
-                                                    //   • BORDER      — dual-stroke: outer white shimmer + inner bright line
-                                                    //   • SHADOW      — outer drop shadow for lift / separation
-                                                    // The tint uses colorScheme.surface so it is warm-white in light
-                                                    // mode and dark-grey in dark mode, making the bar always visible.
-                                                    // ═══════════════════════════════════════════════════════
-
                                                     val surfaceColor = MaterialTheme.colorScheme.surface
                                                     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
-                                                    val curvedItems = navigationItems.map { screen ->
-                                                        CurvedBottomNavigationItem(
-                                                            iconInactive = screen.iconIdInactive,
-                                                            iconActive = screen.iconIdActive,
-                                                            titleId = screen.titleId
+                                                    if (navBarStyle == NavBarStyle.NEW_CLASSIC) {
+                                                        com.bt.bttune.ui.component.NewClassicBottomNavigationBar(
+                                                            items = curvedItems,
+                                                            selectedIndex = selectedIndex,
+                                                            onItemSelected = onItemSelectedAction,
+                                                            onNavigateRoute = { route -> navController.navigate(route) },
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .offset(y = offsetY)
+                                                                .scale(scale)
+                                                                .alpha(alpha)
+                                                        )
+                                                    } else if (navBarStyle == NavBarStyle.SPOTIFY) {
+                                                        com.bt.bttune.ui.component.SpotifyBottomNavigationBar(
+                                                            items = curvedItems,
+                                                            selectedIndex = selectedIndex,
+                                                            onItemSelected = onItemSelectedAction,
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .offset(y = offsetY)
+                                                                .scale(scale)
+                                                                .alpha(alpha)
+                                                        )
+                                                    } else if (navBarStyle == NavBarStyle.APPLE) {
+                                                        com.bt.bttune.ui.component.AppleNavigationBar(
+                                                            items = curvedItems,
+                                                            selectedIndex = selectedIndex,
+                                                            onItemSelected = onItemSelectedAction,
+                                                            backdrop = backdrop,
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .offset(y = offsetY)
+                                                                .scale(scale)
+                                                                .alpha(alpha)
+                                                        )
+                                                    } else if (navBarStyle == NavBarStyle.MATERIAL) {
+                                                        com.bt.bttune.ui.component.MaterialBottomNavigationBar(
+                                                            items = curvedItems,
+                                                            selectedIndex = selectedIndex,
+                                                            onItemSelected = onItemSelectedAction,
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .offset(y = offsetY)
+                                                                .scale(scale)
+                                                                .alpha(alpha)
+                                                        )
+                                                    } else if (navBarStyle == NavBarStyle.LIQUID_GLASS || enableLiquidGlass) {
+                                                        LiquidGlassBottomNavigationBar(
+                                                            items = curvedItems,
+                                                            selectedIndex = selectedIndex,
+                                                            onItemSelected = onItemSelectedAction,
+                                                            backdrop = backdrop,
+                                                            modifier = Modifier
+                                                                .offset(y = offsetY)
+                                                                .scale(scale)
+                                                                .alpha(alpha)
+                                                        )
+                                                    } else {
+                                                         com.bt.bttune.ui.component.NewClassicBottomNavigationBar(
+                                                             onNavigateRoute = { route -> navController.navigate(route) },
+                                                            items = curvedItems,
+                                                            selectedIndex = selectedIndex,
+                                                            onItemSelected = onItemSelectedAction,
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .offset(y = offsetY)
+                                                                .scale(scale)
+                                                                .alpha(alpha)
                                                         )
                                                     }
-
-                                                    val selectedIndex = navigationItems.indexOfFirst { screen ->
-                                                        navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } == true
-                                                    }.takeIf { it >= 0 } ?: 0
-
-                                                    var lastTapTime by remember { mutableLongStateOf(0L) }
-                                                    var lastTappedIcon by remember { mutableStateOf<Int?>(null) }
-                                                    var navigateToExplore by remember { mutableStateOf(false) }
-
-                                                    val onItemSelectedAction: (Int) -> Unit = { index ->
-                                                         val screen = navigationItems[index]
-                                                         val isSelected = index == selectedIndex
-
-                                                         val currentTapTime = System.currentTimeMillis()
-                                                         val timeSinceLastTap = currentTapTime - lastTapTime
-                                                         val isDoubleTap =
-                                                             screen.titleId == R.string.explore &&
-                                                                     lastTappedIcon == R.string.explore &&
-                                                                     timeSinceLastTap < 300L
-
-                                                         lastTapTime = currentTapTime
-                                                         lastTappedIcon = screen.titleId
-
-                                                         if (screen.titleId == R.string.explore) {
-                                                             if (isDoubleTap) {
-                                                                 onActiveChange(true)
-                                                                 navigateToExplore = false
-                                                             } else {
-                                                                 navigateToExplore = true
-                                                                 coroutineScope.launch {
-                                                                     delay(300L)
-                                                                     if (navigateToExplore) {
-                                                                         navigateToScreen(navController, screen)
-                                                                     }
-                                                                 }
-                                                             }
-                                                         } else {
-                                                             if (isSelected) {
-                                                                 navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
-                                                                 coroutineScope.launch {
-                                                                     searchBarScrollBehavior.state.resetHeightOffset()
-                                                                 }
-                                                             } else {
-                                                                 navigateToScreen(navController, screen)
-                                                             }
-                                                         }
-                                                     }
-
-                                                     if (navBarStyle == NavBarStyle.NEW_CLASSIC) {
-                                                         com.bt.bttune.ui.component.NewClassicBottomNavigationBar(
-                                                             items = curvedItems,
-                                                             selectedIndex = selectedIndex,
-                                                             onItemSelected = onItemSelectedAction,
-                                                             onNavigateRoute = { route -> navController.navigate(route) },
-                                                             modifier = Modifier
-                                                                 .fillMaxSize()
-                                                                 .offset(y = offsetY)
-                                                                 .scale(scale)
-                                                                 .alpha(alpha)
-                                                         )
-                                                     } else if (navBarStyle == NavBarStyle.NEON) {
-                                                         com.bt.bttune.ui.component.NeonBottomNavigationBar(
-                                                             items = curvedItems,
-                                                             selectedIndex = selectedIndex,
-                                                             onItemSelected = onItemSelectedAction,
-                                                             modifier = Modifier
-                                                                 .fillMaxSize()
-                                                                 .offset(y = offsetY)
-                                                                 .scale(scale)
-                                                                 .alpha(alpha)
-                                                         )
-                                                     } else if (navBarStyle == NavBarStyle.SPOTIFY) {
-                                                         com.bt.bttune.ui.component.SpotifyBottomNavigationBar(
-                                                             items = curvedItems,
-                                                             selectedIndex = selectedIndex,
-                                                             onItemSelected = onItemSelectedAction,
-                                                             modifier = Modifier
-                                                                 .fillMaxSize()
-                                                                 .offset(y = offsetY)
-                                                                 .scale(scale)
-                                                                 .alpha(alpha)
-                                                         )
-                                                     } else if (navBarStyle == NavBarStyle.APPLE) {
-                                                         com.bt.bttune.ui.component.AppleNavigationBar(
-                                                             items = curvedItems,
-                                                             selectedIndex = selectedIndex,
-                                                             onItemSelected = onItemSelectedAction,
-                                                             backdrop = backdrop,
-                                                             modifier = Modifier
-                                                                 .fillMaxSize()
-                                                                 .offset(y = offsetY)
-                                                                 .scale(scale)
-                                                                 .alpha(alpha)
-                                                         )
-                                                     } else if (navBarStyle == NavBarStyle.LIQUID_GLASS || enableLiquidGlass) {
-                                                         LiquidGlassBottomNavigationBar(
-                                                             items = curvedItems,
-                                                             selectedIndex = selectedIndex,
-                                                             onItemSelected = onItemSelectedAction,
-                                                             backdrop = backdrop,
-                                                             modifier = Modifier
-                                                                 .offset(y = offsetY)
-                                                                 .scale(scale)
-                                                                 .alpha(alpha)
-                                                         )
-                                                     } else {
-                                                         CurvedBottomNavigationBar(
-                                                             items = curvedItems,
-                                                             selectedIndex = selectedIndex,
-                                                             onItemSelected = onItemSelectedAction,
-                                                             modifier = Modifier
-                                                                 .fillMaxSize()
-                                                                 .offset(y = offsetY)
-                                                                 .scale(scale)
-                                                                 .alpha(alpha)
-                                                         )
-                                                     }
                                                 }
 
-                                            } else {
-                                                // Removed redundant bottomInsetDp box
+                                            }
+
+                                            if (shouldShowBetterSideNav) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .navigationBarsPadding(),
+                                                    contentAlignment = Alignment.CenterEnd
+                                                ) {
+                                                    com.bt.bttune.ui.component.BetterRightEdgeNavBar(
+                                                        selectedIndex = selectedIndex,
+                                                        onItemSelected = onItemSelectedAction,
+                                                        modifier = Modifier
+                                                            .padding(end = 12.dp)
+                                                            .scale(scale)
+                                                            .alpha(alpha)
+                                                    )
+                                                }
                                             }
                                         }
                                     },
@@ -1486,69 +1739,121 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
+                                    val enableSwipeBackGesture by rememberPreference(com.bt.bttune.constants.EnableSwipeBackGestureKey, defaultValue = true)
+                                    val currentDestRoute = navBackStackEntry?.destination?.route
+                                    val rootTabRoutes = remember(navigationItems) { navigationItems.map { it.route }.toSet() }
+                                    val isRootScreen = currentDestRoute in rootTabRoutes
+                                    val canSwipeBack = !isRootScreen && navController.previousBackStackEntry != null
+
+                                    BackHandler(
+                                        enabled = currentDestRoute == Screens.Home.route && rootPagerState.currentPage != 0
+                                    ) {
+                                        coroutineScope.launch {
+                                            rootPagerState.animateScrollToPage(0)
+                                        }
+                                    }
+
+                                    SwipeBackContainer(
+                                        enabled = enableSwipeBackGesture,
+                                        canSwipeBack = canSwipeBack,
+                                        onBack = { navController.popBackStack() },
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                    val hasCompletedSetup = remember { AutoBackupManager.hasCompletedSetup(this@MainActivity) }
+                                    val justRestored = remember { AutoBackupManager.consumeJustRestoredFlag(this@MainActivity) }
                                     NavHost(
                                         navController = navController,
-                                        startDestination = if (isNameSet == false) "onboarding" else when (tabOpenedFromShortcut ?: defaultOpenTab) {
-                                            NavigationTab.HOME -> Screens.Home
-                                            NavigationTab.EXPLORE -> Screens.Explore
-                                            NavigationTab.LIBRARY -> Screens.Library
-                                        }.route,
+                                        startDestination = if (hasCompletedSetup || justRestored) {
+                                            when (tabOpenedFromShortcut ?: defaultOpenTab) {
+                                                NavigationTab.HOME -> Screens.Home
+                                                NavigationTab.EXPLORE -> Screens.Explore
+                                                NavigationTab.LIBRARY -> Screens.Library
+                                            }.route
+                                        } else {
+                                            "onboarding"
+                                        },
 
                                         enterTransition = {
-                                            if (initialState.destination.route in topLevelScreens &&
-                                                targetState.destination.route in topLevelScreens
-                                            ) {
-                                                fadeIn(spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                                            if (reduceAnimations) {
+                                                fadeIn(tween(0))
                                             } else {
-                                                fadeIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) +
-                                                        slideInHorizontally(
-                                                            initialOffsetX = { it },
-                                                            animationSpec = spring(stiffness = Spring.StiffnessLow)
-                                                        )
+                                                val fromIdx = navigationItems.indexOfFirst { it.route == initialState.destination.route }
+                                                val toIdx = navigationItems.indexOfFirst { it.route == targetState.destination.route }
+                                                if (fromIdx != -1 && toIdx != -1) {
+                                                    if (toIdx > fromIdx) {
+                                                        slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(150))
+                                                    } else {
+                                                        slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(150))
+                                                    }
+                                                } else {
+                                                    fadeIn(tween(250)) + slideInHorizontally(
+                                                        animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                                        initialOffsetX = { it / 2 }
+                                                    )
+                                                }
                                             }
                                         },
 
                                         exitTransition = {
-                                            if (initialState.destination.route in topLevelScreens &&
-                                                targetState.destination.route in topLevelScreens
-                                            ) {
-                                                fadeOut(spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                                            if (reduceAnimations) {
+                                                fadeOut(tween(0))
                                             } else {
-                                                fadeOut(spring(dampingRatio = Spring.DampingRatioLowBouncy)) +
-                                                        slideOutHorizontally(
-                                                            targetOffsetX = { -it / 5 },
-                                                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
-                                                        )
+                                                val fromIdx = navigationItems.indexOfFirst { it.route == initialState.destination.route }
+                                                val toIdx = navigationItems.indexOfFirst { it.route == targetState.destination.route }
+                                                if (fromIdx != -1 && toIdx != -1) {
+                                                    if (toIdx > fromIdx) {
+                                                        slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(150))
+                                                    } else {
+                                                        slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(150))
+                                                    }
+                                                } else {
+                                                    fadeOut(tween(200)) + slideOutHorizontally(
+                                                        animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                                        targetOffsetX = { -it / 2 }
+                                                    )
+                                                }
                                             }
                                         },
 
                                         popEnterTransition = {
-                                            if ((initialState.destination.route in topLevelScreens ||
-                                                        initialState.destination.route?.startsWith("search/") == true) &&
-                                                targetState.destination.route in topLevelScreens
-                                            ) {
-                                                fadeIn(spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                                            if (reduceAnimations) {
+                                                fadeIn(tween(0))
                                             } else {
-                                                fadeIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) +
-                                                        slideInHorizontally(
-                                                            initialOffsetX = { -it },
-                                                            animationSpec = spring(stiffness = Spring.StiffnessLow)
-                                                        )
+                                                val fromIdx = navigationItems.indexOfFirst { it.route == initialState.destination.route }
+                                                val toIdx = navigationItems.indexOfFirst { it.route == targetState.destination.route }
+                                                if (fromIdx != -1 && toIdx != -1) {
+                                                    if (toIdx > fromIdx) {
+                                                        slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(150))
+                                                    } else {
+                                                        slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(150))
+                                                    }
+                                                } else {
+                                                    fadeIn(tween(250)) + slideInHorizontally(
+                                                        animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                                        initialOffsetX = { -it / 3 }
+                                                    )
+                                                }
                                             }
                                         },
 
                                         popExitTransition = {
-                                            if ((initialState.destination.route in topLevelScreens ||
-                                                        initialState.destination.route?.startsWith("search/") == true) &&
-                                                targetState.destination.route in topLevelScreens
-                                            ) {
-                                                fadeOut(spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                                            if (reduceAnimations) {
+                                                fadeOut(tween(0))
                                             } else {
-                                                fadeOut(spring(dampingRatio = Spring.DampingRatioLowBouncy)) +
-                                                        slideOutHorizontally(
-                                                            targetOffsetX = { it },
-                                                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
-                                                        )
+                                                val fromIdx = navigationItems.indexOfFirst { it.route == initialState.destination.route }
+                                                val toIdx = navigationItems.indexOfFirst { it.route == targetState.destination.route }
+                                                if (fromIdx != -1 && toIdx != -1) {
+                                                    if (toIdx > fromIdx) {
+                                                        slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(150))
+                                                    } else {
+                                                        slideOutHorizontally(tween(300, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(150))
+                                                    }
+                                                } else {
+                                                    fadeOut(tween(200)) + slideOutHorizontally(
+                                                        animationSpec = tween(300, easing = FastOutSlowInEasing),
+                                                        targetOffsetX = { it }
+                                                    )
+                                                }
                                             }
                                         },
 
@@ -1569,8 +1874,11 @@ class MainActivity : ComponentActivity() {
                                             ) searchBarScrollBehavior else topAppBarScrollBehavior,
                                             latestVersionName = latestVersionName,
                                             playerBottomSheetState = playerBottomSheetState,
-                                            onSearchClick = { onActiveChange(true) }
+                                            onSearchClick = { onActiveChange(true) },
+                                            rootPagerState = rootPagerState,
+                                            navigationItems = navigationItems,
                                         )
+                                    }
                                     }
                                     }
                                 }
@@ -1606,10 +1914,117 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
-                                if (showLaunchUpdateDialog) {
-                                    com.bt.bttune.ui.screens.settings.UpdateDownloadDialog(
-                                        latestVersion = latestVersionName,
-                                        onDismiss = { showLaunchUpdateDialog = false }
+                                val currentRoute = navBackStackEntry?.destination?.route
+                                val isOnboardingOrAuth = (!AutoBackupManager.hasCompletedSetup(this@MainActivity) && isNameSet != true) ||
+                                    currentRoute == null ||
+                                    currentRoute == "onboarding" ||
+                                    currentRoute == "guest_profile_setup" ||
+                                    currentRoute == "discord_login"
+
+                                var hasSettledOnMainScreen by rememberSaveable { mutableStateOf(false) }
+                                LaunchedEffect(isOnboardingOrAuth) {
+                                    if (!isOnboardingOrAuth) {
+                                        delay(600)
+                                        hasSettledOnMainScreen = true
+                                    } else {
+                                        hasSettledOnMainScreen = false
+                                    }
+                                }
+
+                                var showNoInternetDialog by rememberSaveable { mutableStateOf(false) }
+                                var hasCheckedInternetOnOpen by rememberSaveable { mutableStateOf(false) }
+
+                                LaunchedEffect(hasSettledOnMainScreen, isOnboardingOrAuth) {
+                                    if (hasSettledOnMainScreen && !isOnboardingOrAuth && !hasCheckedInternetOnOpen) {
+                                        hasCheckedInternetOnOpen = true
+                                        delay(400)
+                                        if (!com.bt.bttune.utils.isInternetAvailable(this@MainActivity)) {
+                                            showNoInternetDialog = true
+                                        }
+                                    }
+                                }
+
+                                if (hasSettledOnMainScreen && !isOnboardingOrAuth) {
+                                    if (showNoInternetDialog) {
+                                        com.bt.bttune.ui.component.NoInternetDialog(
+                                            onDismiss = { showNoInternetDialog = false },
+                                            onListenCached = {
+                                                showNoInternetDialog = false
+                                                navController.navigate("cache_playlist/cached")
+                                            },
+                                            onGoToLibrary = {
+                                                showNoInternetDialog = false
+                                                navController.navigate(Screens.Library.route)
+                                            }
+                                        )
+                                    }
+
+                                    updateInfoState?.let { info ->
+                                        UpdateAvailableDialog(
+                                            updateInfo = info,
+                                            onDismiss = { updateInfoState = null }
+                                        )
+                                    }
+
+                                    com.bt.bttune.ui.component.DeveloperNewsPopupDialog(
+                                        onNavigateToNews = {
+                                            navController.navigate("settings/developer_news")
+                                        }
+                                    )
+                                }
+
+                                val ringtoneUiState by ringtoneViewModel.uiState.collectAsState()
+
+                                RingtoneTrimmerDialog(
+                                    isVisible = ringtoneUiState.showTrimmer,
+                                    songId = ringtoneUiState.targetSongId,
+                                    songTitle = ringtoneUiState.targetSongTitle,
+                                    duration = ringtoneUiState.targetSongDuration,
+                                    onDismiss = { ringtoneViewModel.hideTrimmer() },
+                                    onResolveStreamUrl = { ringtoneViewModel.getStreamUrl(this@MainActivity, it) },
+                                    onConfirm = { start, end -> ringtoneViewModel.setAsRingtone(this@MainActivity, start, end) }
+                                )
+
+                                val currentPendingIntent by pendingIntentFlow.collectAsState()
+
+                                LaunchedEffect(currentPendingIntent) {
+                                    val targetIntent = currentPendingIntent ?: return@LaunchedEffect
+                                    when (targetIntent.action) {
+                                        ACTION_MUSIC_RECOGNITION -> {
+                                            navController.openMusicRecognition()
+                                            pendingIntentFlow.value = null
+                                        }
+                                        ACTION_SEARCH -> {
+                                            val query = targetIntent.getStringExtra("search_query")
+                                            if (!query.isNullOrBlank()) {
+                                                navController.navigate("search/${java.net.URLEncoder.encode(query, "UTF-8")}")
+                                            } else {
+                                                openSearchImmediately = true
+                                            }
+                                            pendingIntentFlow.value = null
+                                        }
+                                        ACTION_LIBRARY -> {
+                                            val libIndex = navigationItems.indexOf(Screens.Library)
+                                            if (libIndex >= 0) rootPagerState.animateScrollToPage(libIndex)
+                                            pendingIntentFlow.value = null
+                                        }
+                                        ACTION_EXPLORE -> {
+                                            val expIndex = navigationItems.indexOf(Screens.Explore)
+                                            if (expIndex >= 0) rootPagerState.animateScrollToPage(expIndex)
+                                            pendingIntentFlow.value = null
+                                        }
+                                    }
+                                }
+
+                                if (ringtoneUiState.showProgress) {
+                                    RingtoneProgressDialog(
+                                        isVisible = ringtoneUiState.showProgress,
+                                        progress = ringtoneUiState.progress,
+                                        statusMessage = ringtoneUiState.statusMessage,
+                                        isComplete = ringtoneUiState.isComplete,
+                                        isSuccess = ringtoneUiState.isSuccess,
+                                        onDismiss = { ringtoneViewModel.dismissProgress() },
+                                        onOpenSettings = { ringtoneViewModel.openRingtoneSettings(this@MainActivity) }
                                     )
                                 }
                             }
@@ -1636,8 +2051,13 @@ class MainActivity : ComponentActivity() {
         navController: NavHostController,
         screen: Screens
     ) {
+        val startDestId = try {
+            navController.graph.findStartDestination().id
+        } catch (_: Exception) {
+            navController.graph.startDestinationId
+        }
         navController.navigate(screen.route) {
-            popUpTo(navController.graph.startDestinationId) {
+            popUpTo(startDestId) {
                 saveState = true
             }
             launchSingleTop = true
@@ -1650,7 +2070,7 @@ class MainActivity : ComponentActivity() {
         when {
             uri.pathSegments.firstOrNull() == "watch" -> uri.getQueryParameter("v")
             uri.host == "youtu.be" -> uri.pathSegments.firstOrNull()
-            uri.host == "play.bttune.app" -> {
+            com.bt.bttune.utils.RemoteConfigManager.isMatchingPlayDomain(uri.host) -> {
                 if (uri.pathSegments.firstOrNull() == "song") {
                     uri.getQueryParameter("id")
                 } else if (uri.pathSegments.firstOrNull() == "artist") {
@@ -1693,6 +2113,7 @@ class MainActivity : ComponentActivity() {
         const val ACTION_SEARCH = "com.bt.bttune.action.SEARCH"
         const val ACTION_EXPLORE = "com.bt.bttune.action.EXPLORE"
         const val ACTION_LIBRARY = "com.bt.bttune.action.LIBRARY"
+        const val ACTION_MUSIC_RECOGNITION = "com.bt.bttune.action.MUSIC_RECOGNITION"
     }
 }
 
@@ -1703,6 +2124,7 @@ val LocalPlayerAwareWindowInsets =
     compositionLocalOf<WindowInsets> { error("No WindowInsets provided") }
 val LocalDownloadUtil = staticCompositionLocalOf<DownloadUtil> { error("No DownloadUtil provided") }
 val LocalSyncUtils = staticCompositionLocalOf<SyncUtils> { error("No SyncUtils provided") }
+val LocalRingtoneViewModel = staticCompositionLocalOf<RingtoneViewModel> { error("No RingtoneViewModel provided") }
 
 
 @Composable
@@ -1802,20 +2224,15 @@ private fun openNotificationSettings(context: Context) {
 
 suspend fun checkForUpdates(): String? = withContext(Dispatchers.IO) {
     try {
-        val url = URL("https://api.github.com/repos/batz-dev/bttune-android/releases/latest")
-        val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
-            setRequestProperty("User-Agent", "BTTUNE-App")
-            connectTimeout = 10000
-            readTimeout = 10000
-        }
-        val json = connection.inputStream.bufferedReader().use { it.readText() }
+        val url = URL(com.bt.bttune.utils.RemoteConfigManager.getLatestReleaseApiUrl(isNightly = false))
+        val connection = url.openConnection()
+        connection.connect()
+        val json = connection.getInputStream().bufferedReader().use { it.readText() }
         val jsonObject = JSONObject(json)
-        val tag = jsonObject.optString("tag_name", "")
-        val name = jsonObject.optString("name", "")
-        if (tag.isNotEmpty()) tag else if (name.isNotEmpty()) name else null
+        return@withContext jsonObject.getString("tag_name")
     } catch (e: Exception) {
-        Timber.tag("Updater").e(e, "Error checking for updates")
-        null
+        e.printStackTrace()
+        return@withContext null
     }
 }
 
@@ -2094,7 +2511,7 @@ fun ModernHomeTopBar(
 }
 
 @Composable
-fun HeadphoneSplashScreen() {
+fun HeadphoneSplashScreen(statusText: String? = null) {
 
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
 
@@ -2154,18 +2571,16 @@ fun HeadphoneSplashScreen() {
         ) {
             Box(
                 modifier = Modifier
-                    .size(130.dp)
-                    .clip(CircleShape),
-                contentAlignment = Alignment.Center
+                    .width(220.dp)
+                    .height(145.dp)
+                    .clipToBounds()
             ) {
                 Image(
-                    painter = painterResource(R.drawable.ic_bttune_logo),
+                    painter = painterResource(R.drawable.airbeats_logo),
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.size(220.dp)
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "BTTUNE",
@@ -2175,13 +2590,33 @@ fun HeadphoneSplashScreen() {
                 style = TextStyle(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            Color(0xFFFF2A6D),
-                            Color(0xFF9B51E0),
-                            Color(0xFF05D9E8)
+                            Color(0xFFE91E63),
+                            Color(0xFFFFC107),
+                            Color(0xFF2196F3)
                         )
                     )
                 )
             )
+
+            if (!statusText.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = statusText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                    )
+                }
+            }
         }
     }
 }

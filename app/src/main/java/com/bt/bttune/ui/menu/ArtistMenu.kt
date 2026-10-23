@@ -131,7 +131,7 @@ fun ArtistMenu(
                         type = "text/plain"
                         putExtra(
                             Intent.EXTRA_TEXT,
-                            "https://play.bttune.app/artist?id=${artist.id}"
+                            com.bt.bttune.utils.RemoteConfigManager.getArtistShareUrl(artist.id)
                         )
                     }
                 context.startActivity(Intent.createChooser(intent, null))

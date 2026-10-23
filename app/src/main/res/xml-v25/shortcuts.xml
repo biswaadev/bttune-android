@@ -30,4 +30,14 @@
             android:targetClass="com.bt.bttune.MainActivity"
             android:targetPackage="com.bt.bttune" />
     </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/mic"
+        android:shortcutId="music_recognition"
+        android:shortcutShortLabel="@string/identify_music">
+        <intent
+            android:action="com.bt.bttune.action.MUSIC_RECOGNITION"
+            android:targetClass="com.bt.bttune.MainActivity"
+            android:targetPackage="com.bt.bttune" />
+    </shortcut>
 </shortcuts>

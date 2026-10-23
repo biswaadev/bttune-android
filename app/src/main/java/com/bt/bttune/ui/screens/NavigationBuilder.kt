@@ -20,6 +20,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.dialog
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.bt.bttune.BuildConfig
 import com.bt.bttune.constants.HomeScreenStyle
 import com.bt.bttune.constants.HomeScreenStyleKey
@@ -29,6 +30,7 @@ import com.bt.bttune.ui.screens.artist.ArtistScreen
 import com.bt.bttune.ui.screens.artist.ArtistSongsScreen
 import com.bt.bttune.ui.screens.library.CachePlaylistScreen
 import com.bt.bttune.ui.screens.library.LibraryScreen
+import com.bt.bttune.ui.screens.library.LocalSongsScreen
 import com.bt.bttune.ui.screens.library.PlayfulLibraryScreen
 import com.bt.bttune.ui.screens.playlist.AutoPlaylistScreen
 import com.bt.bttune.ui.screens.playlist.LocalPlaylistScreen
@@ -45,10 +47,13 @@ import com.bt.bttune.ui.screens.settings.DiscordLoginScreen
 import com.bt.bttune.ui.screens.settings.DiscordSettings
 import com.bt.bttune.ui.screens.settings.PlayerSettings
 import com.bt.bttune.ui.screens.settings.PrivacySettings
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.ui.Modifier
 import com.bt.bttune.ui.screens.settings.SettingsScreen
 import com.bt.bttune.ui.screens.settings.StorageSettings
 
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @SuppressLint("UnrememberedMutableState")
 @OptIn(ExperimentalMaterial3Api::class)
 fun NavGraphBuilder.navigationBuilder(
@@ -57,23 +62,87 @@ fun NavGraphBuilder.navigationBuilder(
     latestVersionName: String,
     playerBottomSheetState: BottomSheetState,
     onSearchClick: () -> Unit,
+    rootPagerState: PagerState? = null,
+    navigationItems: List<Screens> = emptyList(),
 ) {
     composable(Screens.Home.route) {
-        val (homeScreenStyle, _) = rememberEnumPreference(
-            HomeScreenStyleKey,
-            defaultValue = HomeScreenStyle.CLASSIC
-        )
-
-        if (homeScreenStyle == HomeScreenStyle.PLAYFUL) {
-            PlayfulHomeScreen(navController = navController, playerBottomSheetState = playerBottomSheetState, onSearchClick = onSearchClick)
-        } else if (homeScreenStyle == HomeScreenStyle.NEON) {
-            NeonHomeScreen(navController = navController)
-        } else if (homeScreenStyle == HomeScreenStyle.SPOTIFY) {
-            SpotifyHomeScreen(navController = navController)
-        } else if (homeScreenStyle == HomeScreenStyle.APPLE) {
-            com.bt.bttune.ui.screens.apple.AppleHomeScreen(navController = navController)
+        if (rootPagerState != null && navigationItems.isNotEmpty()) {
+            HorizontalPager(
+                state = rootPagerState,
+                modifier = Modifier.fillMaxSize(),
+                key = { index -> navigationItems.getOrNull(index)?.route ?: index.toString() }
+            ) { pageIndex ->
+                val screen = navigationItems.getOrNull(pageIndex) ?: Screens.Home
+                val (homeScreenStyle, _) = rememberEnumPreference(
+                    HomeScreenStyleKey,
+                    defaultValue = HomeScreenStyle.CLASSIC
+                )
+                when (screen.route) {
+                    Screens.Home.route -> {
+                        when (homeScreenStyle) {
+                            HomeScreenStyle.PLAYFUL -> PlayfulHomeScreen(navController = navController, playerBottomSheetState = playerBottomSheetState, onSearchClick = onSearchClick)
+                            HomeScreenStyle.SPOTIFY -> SpotifyHomeScreen(navController = navController)
+                            HomeScreenStyle.APPLE -> com.bt.bttune.ui.screens.apple.AppleHomeScreen(navController = navController)
+                            HomeScreenStyle.NEW_CLASSIC -> NewClassicHomeScreen(navController = navController, onSearchClick = onSearchClick)
+                            HomeScreenStyle.BETTER -> BetterHomeScreen(navController = navController, onSearchClick = onSearchClick)
+                            HomeScreenStyle.MATERIAL -> com.bt.bttune.ui.screens.material.MaterialHomeScreen(navController = navController, onSearchClick = onSearchClick)
+                            else -> HomeScreen(navController = navController, onSearchClick = onSearchClick)
+                        }
+                    }
+                    Screens.Explore.route -> {
+                        when (homeScreenStyle) {
+                            HomeScreenStyle.PLAYFUL -> PlayfulExploreScreen(navController = navController, playerBottomSheetState = playerBottomSheetState, onSearchClick = onSearchClick)
+                            HomeScreenStyle.SPOTIFY -> SpotifyExploreScreen(navController = navController)
+                            HomeScreenStyle.APPLE -> com.bt.bttune.ui.screens.apple.AppleExploreScreen(navController = navController)
+                            HomeScreenStyle.MATERIAL -> com.bt.bttune.ui.screens.material.MaterialExploreScreen(navController = navController, scrollBehavior = scrollBehavior)
+                            else -> ExploreScreen(navController, scrollBehavior)
+                        }
+                    }
+                    Screens.Library.route -> {
+                        when (homeScreenStyle) {
+                            HomeScreenStyle.PLAYFUL -> PlayfulLibraryScreen(navController = navController, playerBottomSheetState = playerBottomSheetState, onSearchClick = onSearchClick)
+                            HomeScreenStyle.SPOTIFY -> SpotifyLibraryScreen(navController)
+                            HomeScreenStyle.APPLE -> com.bt.bttune.ui.screens.apple.AppleLibraryScreen(navController = navController)
+                            HomeScreenStyle.MATERIAL -> com.bt.bttune.ui.screens.material.MaterialLibraryScreen(navController = navController)
+                            else -> LibraryScreen(navController)
+                        }
+                    }
+                    Screens.Search.route -> {
+                        com.bt.bttune.ui.screens.material.MaterialSearchScreen(navController = navController)
+                    }
+                    "stats" -> {
+                        if (homeScreenStyle == HomeScreenStyle.APPLE) {
+                            com.bt.bttune.ui.screens.apple.AppleStatsScreen(navController = navController)
+                        } else {
+                            StatsScreen(navController)
+                        }
+                    }
+                    else -> {
+                        HomeScreen(navController = navController, onSearchClick = onSearchClick)
+                    }
+                }
+            }
         } else {
-            HomeScreen(navController = navController, onSearchClick = onSearchClick)
+            val (homeScreenStyle, _) = rememberEnumPreference(
+                HomeScreenStyleKey,
+                defaultValue = HomeScreenStyle.CLASSIC
+            )
+
+            if (homeScreenStyle == HomeScreenStyle.PLAYFUL) {
+                PlayfulHomeScreen(navController = navController, playerBottomSheetState = playerBottomSheetState, onSearchClick = onSearchClick)
+            } else if (homeScreenStyle == HomeScreenStyle.SPOTIFY) {
+                SpotifyHomeScreen(navController = navController)
+            } else if (homeScreenStyle == HomeScreenStyle.APPLE) {
+                com.bt.bttune.ui.screens.apple.AppleHomeScreen(navController = navController)
+            } else if (homeScreenStyle == HomeScreenStyle.NEW_CLASSIC) {
+                NewClassicHomeScreen(navController = navController, onSearchClick = onSearchClick)
+            } else if (homeScreenStyle == HomeScreenStyle.BETTER) {
+                BetterHomeScreen(navController = navController, onSearchClick = onSearchClick)
+            } else if (homeScreenStyle == HomeScreenStyle.MATERIAL) {
+                com.bt.bttune.ui.screens.material.MaterialHomeScreen(navController = navController, onSearchClick = onSearchClick)
+            } else {
+                HomeScreen(navController = navController, onSearchClick = onSearchClick)
+            }
         }
     }
 
@@ -91,12 +160,12 @@ fun NavGraphBuilder.navigationBuilder(
                 playerBottomSheetState = playerBottomSheetState,
                 onSearchClick = onSearchClick
             )
-        } else if (homeScreenStyle == HomeScreenStyle.NEON) {
-            com.bt.bttune.ui.screens.library.NeonLibraryScreen(navController = navController)
         } else if (homeScreenStyle == HomeScreenStyle.SPOTIFY) {
             SpotifyLibraryScreen(navController)
         } else if (homeScreenStyle == HomeScreenStyle.APPLE) {
             com.bt.bttune.ui.screens.apple.AppleLibraryScreen(navController = navController)
+        } else if (homeScreenStyle == HomeScreenStyle.MATERIAL) {
+            com.bt.bttune.ui.screens.material.MaterialLibraryScreen(navController = navController)
         } else {
             LibraryScreen(navController)
         }
@@ -113,57 +182,21 @@ fun NavGraphBuilder.navigationBuilder(
                 playerBottomSheetState = playerBottomSheetState,
                 onSearchClick = onSearchClick
             )
-        } else if (homeScreenStyle == HomeScreenStyle.NEON) {
-            NeonExploreScreen(navController = navController)
         } else if (homeScreenStyle == HomeScreenStyle.SPOTIFY) {
             SpotifyExploreScreen(navController = navController)
         } else if (homeScreenStyle == HomeScreenStyle.APPLE) {
             com.bt.bttune.ui.screens.apple.AppleExploreScreen(navController = navController)
+        } else if (homeScreenStyle == HomeScreenStyle.MATERIAL) {
+            com.bt.bttune.ui.screens.material.MaterialExploreScreen(navController = navController, scrollBehavior = scrollBehavior)
         } else {
             ExploreScreen(navController,scrollBehavior)
         }
     }
     composable(Screens.Search.route) {
-        val (navBarStyle, _) = rememberEnumPreference(
-            com.bt.bttune.constants.NavBarStyleKey,
-            defaultValue = com.bt.bttune.constants.NavBarStyle.CLASSIC
-        )
-        val (homeScreenStyle, _) = rememberEnumPreference(
-            HomeScreenStyleKey,
-            defaultValue = HomeScreenStyle.CLASSIC
-        )
-        
-        val useNeon = navBarStyle == com.bt.bttune.constants.NavBarStyle.NEON || (navBarStyle !in listOf(com.bt.bttune.constants.NavBarStyle.APPLE, com.bt.bttune.constants.NavBarStyle.SPOTIFY) && homeScreenStyle == HomeScreenStyle.NEON)
-        val useApple = navBarStyle == com.bt.bttune.constants.NavBarStyle.APPLE || (navBarStyle !in listOf(com.bt.bttune.constants.NavBarStyle.NEON, com.bt.bttune.constants.NavBarStyle.SPOTIFY) && homeScreenStyle == HomeScreenStyle.APPLE)
-
-        if (useNeon) {
-            com.bt.bttune.ui.screens.search.NeonSearchScreen(navController = navController)
-        } else if (useApple) {
-            com.bt.bttune.ui.screens.apple.AppleSearchScreen(navController = navController)
-        } else {
-            SpotifySearchScreen(navController = navController)
-        }
+        com.bt.bttune.ui.screens.material.MaterialSearchScreen(navController = navController)
     }
     composable("search/") {
-        val (navBarStyle, _) = rememberEnumPreference(
-            com.bt.bttune.constants.NavBarStyleKey,
-            defaultValue = com.bt.bttune.constants.NavBarStyle.CLASSIC
-        )
-        val (homeScreenStyle, _) = rememberEnumPreference(
-            HomeScreenStyleKey,
-            defaultValue = HomeScreenStyle.CLASSIC
-        )
-        
-        val useNeon = navBarStyle == com.bt.bttune.constants.NavBarStyle.NEON || (navBarStyle !in listOf(com.bt.bttune.constants.NavBarStyle.APPLE, com.bt.bttune.constants.NavBarStyle.SPOTIFY) && homeScreenStyle == HomeScreenStyle.NEON)
-        val useApple = navBarStyle == com.bt.bttune.constants.NavBarStyle.APPLE || (navBarStyle !in listOf(com.bt.bttune.constants.NavBarStyle.NEON, com.bt.bttune.constants.NavBarStyle.SPOTIFY) && homeScreenStyle == HomeScreenStyle.APPLE)
-
-        if (useNeon) {
-            com.bt.bttune.ui.screens.search.NeonSearchScreen(navController = navController)
-        } else if (useApple) {
-            com.bt.bttune.ui.screens.apple.AppleSearchScreen(navController = navController)
-        } else {
-            SpotifySearchScreen(navController = navController)
-        }
+        com.bt.bttune.ui.screens.material.MaterialSearchScreen(navController = navController)
     }
     composable("history") {
         HistoryScreen(navController)
@@ -175,9 +208,6 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("guest_profile_setup") {
         com.bt.bttune.ui.screens.onboarding.GuestProfileSetupScreen(navController = navController)
-    }
-    composable("neon_search") {
-        com.bt.bttune.ui.screens.search.NeonSearchScreen(navController = navController)
     }
     composable("stats") {
         val (homeScreenStyle, _) = rememberEnumPreference(
@@ -193,6 +223,12 @@ fun NavGraphBuilder.navigationBuilder(
     composable("account") {
         AccountScreen(navController, scrollBehavior)
     }
+    composable("spotify_login") {
+        SpotifyLoginScreen(navController)
+    }
+    composable("spotify_account") {
+        com.bt.bttune.ui.screens.settings.SpotifyAccountScreen(navController)
+    }
     composable("new_release") {
         NewReleaseScreen(navController, scrollBehavior)
     }
@@ -202,17 +238,28 @@ fun NavGraphBuilder.navigationBuilder(
     composable("year_in_music") {
         YearInMusicScreen(navController)
     }
-    composable("listen_together") {
+    composable(
+        route = "listen_together",
+        deepLinks = listOf(
+            navDeepLink { uriPattern = "airbeats://together.*" }
+        )
+    ) {
         ListenTogetherScreen(navController, scrollBehavior)
     }
     composable(com.bt.bttune.ui.screens.musicrecognition.MusicRecognitionRoute) {
         com.bt.bttune.ui.screens.musicrecognition.MusicRecognitionScreen(navController)
     }
 
-
-
-
-
+    composable("generator") {
+        com.bt.bttune.ui.screens.generator.GenerateScreen(
+            navController = navController,
+            onBack = { navController.popBackStack() },
+            onNavigateToPlaylist = { playlistId ->
+                navController.popBackStack()
+                navController.navigate("local_playlist/$playlistId")
+            }
+        )
+    }
 
     composable(
         route = "search/{query}",
@@ -324,6 +371,9 @@ fun NavGraphBuilder.navigationBuilder(
     ) {
         LocalPlaylistScreen(navController, scrollBehavior)
     }
+    composable(route = "local_songs") {
+        LocalSongsScreen(navController)
+    }
     composable(
         route = "auto_playlist/{playlist}",
         arguments =
@@ -385,6 +435,12 @@ fun NavGraphBuilder.navigationBuilder(
     composable("settings/appearance") {
         AppearanceSettings(navController, scrollBehavior)
     }
+    composable("settings/appearance/app_icon") {
+        com.bt.bttune.ui.screens.settings.AppIconScreen(navController, scrollBehavior)
+    }
+    composable("settings/dynamic_island") {
+        com.bt.bttune.ui.screens.settings.DynamicIslandSettings(navController, scrollBehavior)
+    }
     composable("settings/always_on_display") {
         AODSettings(navController, scrollBehavior)
     }
@@ -394,8 +450,23 @@ fun NavGraphBuilder.navigationBuilder(
     composable("settings/content") {
         ContentSettings(navController, scrollBehavior)
     }
+    composable("settings/content/excluded_songs") {
+        com.bt.bttune.ui.screens.settings.ExcludedSongsScreen(navController, scrollBehavior)
+    }
+    composable("settings/lyrics") {
+        com.bt.bttune.ui.screens.settings.LyricsSettings(navController, scrollBehavior)
+    }
+    composable("settings/ai") {
+        com.bt.bttune.ui.screens.settings.AiSettings(navController, scrollBehavior)
+    }
     composable("settings/player") {
         PlayerSettings(navController, scrollBehavior)
+    }
+    composable("settings/scrobbler") {
+        com.bt.bttune.ui.screens.settings.ScrobblerSettingsScreen(navController, scrollBehavior)
+    }
+    composable("settings/scrobbler/apps") {
+        com.bt.bttune.ui.screens.settings.ScrobblerAppsScreen(navController)
     }
     composable("settings/storage") {
         StorageSettings(navController, scrollBehavior)
@@ -410,17 +481,52 @@ fun NavGraphBuilder.navigationBuilder(
         DiscordSettings(navController, scrollBehavior)
     }
     composable("settings/experimental") {
-        com.bt.bttune.ui.screens.settings.DebugSettings(navController)
-    }
+            com.bt.bttune.ui.screens.settings.DebugSettings(navController)
+        }
+        composable("settings/voice_assistant") {
+            com.bt.bttune.ui.screens.settings.VoiceAssistantSettings(navController, scrollBehavior)
+        }
     composable("settings/discord/login") {
         DiscordLoginScreen(navController)
+    }
+    composable("settings/android_auto") {
+        com.bt.bttune.ui.screens.settings.AndroidAutoSettings(
+            navController,
+            scrollBehavior
+        )
     }
     composable("settings/about") {
         AboutScreen(navController, scrollBehavior)
     }
-    composable("login") {
-        LoginScreen(navController)
+    composable("settings/app_info") {
+        com.bt.bttune.ui.screens.settings.AppInfoScreen(navController, scrollBehavior)
     }
+    composable("settings/developer_news") {
+        com.bt.bttune.ui.screens.settings.DeveloperNewsScreen(navController, scrollBehavior)
+    }
+    composable("settings/home_sections") {
+        com.bt.bttune.ui.screens.settings.MaterialHomeSectionsScreen(
+            onBack = { navController.popBackStack() }
+        )
+    }
+    composable("settings/gestures") {
+        com.bt.bttune.ui.screens.settings.GesturesSettingsScreen(
+            navController = navController,
+            scrollBehavior = scrollBehavior
+        )
+    }
+    composable("charts") {
+        com.bt.bttune.ui.screens.charts.ChartsScreen(
+            navController = navController,
+            scrollBehavior = scrollBehavior
+        )
+    }
+    composable("login") {
+            LoginScreen(navController)
+        }
+        composable("youtube_login") {
+            YouTubeLoginScreen(navController)
+        }
     composable("contributor/{username}") { backStackEntry ->
         val username = backStackEntry.arguments?.getString("username") ?: return@composable
         ContributorProfileScreen(navController, username)
@@ -435,6 +541,8 @@ fun NavGraphBuilder.navigationBuilder(
         AlwaysOnDisplayScreen(navController)
     }
 }
+
+
 
 
 

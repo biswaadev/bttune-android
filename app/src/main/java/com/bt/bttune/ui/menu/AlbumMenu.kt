@@ -344,28 +344,11 @@ fun AlbumMenu(
                     val albumTitle = album.album.title
                     val savingToastMsg = context.getString(R.string.saving_playlist_to_storage, albumTitle)
                     android.widget.Toast.makeText(context, savingToastMsg, android.widget.Toast.LENGTH_SHORT).show()
-                    scope.launch(Dispatchers.IO) {
-                        com.bt.bttune.utils.SaveToStorageUtil
-                            .savePlaylistToMusicFolder(context, albumTitle, songs.map { it.toMediaMetadata() })
-                            .onSuccess { count ->
-                                launch(Dispatchers.Main) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Saved $count songs to Music/BTTUNE/$albumTitle",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                            .onFailure { e ->
-                                launch(Dispatchers.Main) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Save failed: ${e.message}",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                    }
+                    com.bt.bttune.utils.SaveToStorageUtil.savePlaylistToMusicFolderAsync(
+                        context = context,
+                        playlistName = albumTitle,
+                        mediaList = songs.map { it.toMediaMetadata() }
+                    )
                     onDismiss()
                 }
             }
@@ -411,7 +394,7 @@ fun AlbumMenu(
                     type = "text/plain"
                     putExtra(
                         Intent.EXTRA_TEXT,
-                        "https://play.bttune.app/album?id=${album.album.id}"
+                        com.bt.bttune.utils.RemoteConfigManager.getAlbumShareUrl(album.album.id)
                     )
                 }
             context.startActivity(Intent.createChooser(intent, null))
