@@ -7,7 +7,7 @@
 **Modern Material Design 3 UI • Ad-Free Background Streaming • Ultra-Fast Performance**
 
 [![Platform](https://img.shields.io/badge/Platform-Android%208.0+-3DDC84.svg?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
-[![Direct Download](https://img.shields.io/badge/Download-BTTUNE%20APK-FF2A6D.svg?style=for-the-badge&logo=android)](https://github.com/batz-dev/bttune-android/releases/latest)
+[![Direct Download](https://img.shields.io/badge/Download-BTTUNE%20APK-FF2A6D.svg?style=for-the-badge&logo=android)](https://github.com/biswaadev/bttune-android/releases/latest)
 [![Contact](https://img.shields.io/badge/Support-Telegram%20%40freek311-0088cc.svg?style=for-the-badge&logo=telegram)](https://t.me/freek311)
 
 </div>
@@ -34,4 +34,4 @@
 ## 💬 Support & Contact
 
 - 📱 **Telegram:** [@freek311](https://t.me/freek311)
-- 🌐 **Releases:** [Download Latest BTTUNE APK](https://github.com/batz-dev/bttune-android/releases/latest)
+- 🌐 **Releases:** [Download Latest BTTUNE APK](https://github.com/biswaadev/bttune-android/releases/latest)

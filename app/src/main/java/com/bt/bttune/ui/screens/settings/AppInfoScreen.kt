@@ -229,7 +229,7 @@ class AppInfoViewModel : ViewModel() {
     private suspend fun fetchReleases() {
         _uiState.update { it.copy(isLoadingReleases = true, releasesError = null) }
         try {
-            val list = gitHubClient.getRecentReleases("d0x-dev", "BTTUNE", perPage = 8)
+            val list = gitHubClient.getRecentReleases("biswaadev", "bttune-android", perPage = 8)
             _uiState.update { it.copy(releases = list, isLoadingReleases = false) }
         } catch (e: Exception) {
             Timber.e(e, "Error loading releases")
@@ -240,7 +240,7 @@ class AppInfoViewModel : ViewModel() {
     private suspend fun fetchCommits() {
         _uiState.update { it.copy(isLoadingCommits = true, commitsError = null) }
         try {
-            val list = gitHubClient.getRecentCommits("d0x-dev", "BTTUNE", perPage = 8)
+            val list = gitHubClient.getRecentCommits("biswaadev", "bttune-android", perPage = 8)
             _uiState.update { it.copy(commits = list, isLoadingCommits = false) }
         } catch (e: Exception) {
             Timber.e(e, "Error loading commits")
@@ -394,7 +394,7 @@ fun AppInfoScreen(
                         icon = painterResource(R.drawable.deployed_code_update),
                         actionText = "All Releases",
                         onActionClick = {
-                            uriHandler.openUri(RemoteConfigManager.getReleasesPageUrl().ifBlank { "https://github.com/batz-dev/bttune-android/releases" })
+                            uriHandler.openUri(RemoteConfigManager.getReleasesPageUrl().ifBlank { "https://github.com/biswaadev/bttune-android/releases" })
                         }
                     )
                 }
@@ -433,7 +433,7 @@ fun AppInfoScreen(
                         icon = painterResource(R.drawable.github),
                         actionText = "View Commits",
                         onActionClick = {
-                            uriHandler.openUri("https://github.com/batz-dev/bttune-android/commits")
+                            uriHandler.openUri("https://github.com/biswaadev/bttune-android/commits")
                         }
                     )
                 }
@@ -454,7 +454,7 @@ fun AppInfoScreen(
                         AppCommitCard(
                             commit = commit,
                             onClick = {
-                                val url = commit.html_url.ifBlank { "https://github.com/batz-dev/bttune-android/commit/${commit.sha}" }
+                                val url = commit.html_url.ifBlank { "https://github.com/biswaadev/bttune-android/commit/${commit.sha}" }
                                 uriHandler.openUri(url)
                             }
                         )
@@ -1270,7 +1270,7 @@ private fun DesktopEcosystemSection(
             title = "BTTUNE for Desktop",
             icon = painterResource(R.drawable.desktop_windows),
             actionText = "Desktop Repo",
-            onActionClick = { onOpenUrl("https://github.com/batz-dev/bttune-android-desktop") }
+            onActionClick = { onOpenUrl("https://github.com/biswaadev/bttune-android-desktop") }
         )
 
         // Desktop Repository Card
@@ -1306,7 +1306,7 @@ private fun DesktopEcosystemSection(
                         title = "BTTUNE for Windows",
                         subtitle = "Windows 10 / 11 64-bit (.exe & Portable)",
                         actionText = "Get Windows",
-                        onClick = { onOpenUrl("https://github.com/batz-dev/bttune-android-desktop/releases") }
+                        onClick = { onOpenUrl("https://github.com/biswaadev/bttune-android-desktop/releases") }
                     )
 
                     // Mac Card
@@ -1315,7 +1315,7 @@ private fun DesktopEcosystemSection(
                         title = "BTTUNE for Mac",
                         subtitle = "macOS Apple Silicon & Intel (.dmg)",
                         actionText = "Get macOS",
-                        onClick = { onOpenUrl("https://github.com/batz-dev/bttune-android-desktop/releases") }
+                        onClick = { onOpenUrl("https://github.com/biswaadev/bttune-android-desktop/releases") }
                     )
 
                     // Linux Card
@@ -1674,7 +1674,7 @@ private fun CommunityHubCard(
                 icon = painterResource(R.drawable.github),
                 title = "GitHub Repository",
                 subtitle = "Browse source code, branches and pull requests",
-                onClick = { onOpenUrl("https://github.com/batz-dev/bttune-android") }
+                onClick = { onOpenUrl("https://github.com/biswaadev/bttune-android") }
             )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
@@ -1683,7 +1683,7 @@ private fun CommunityHubCard(
                 icon = painterResource(R.drawable.star),
                 title = "Give a Star on GitHub",
                 subtitle = "Show your support and help BTTUNE grow",
-                onClick = { onOpenUrl("https://github.com/batz-dev/bttune-android") }
+                onClick = { onOpenUrl("https://github.com/biswaadev/bttune-android") }
             )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
@@ -1692,7 +1692,7 @@ private fun CommunityHubCard(
                 icon = painterResource(R.drawable.bug_report),
                 title = "Raise an Issue",
                 subtitle = "Report unexpected bugs or request new features",
-                onClick = { onOpenUrl("https://github.com/batz-dev/bttune-android/issues/new") }
+                onClick = { onOpenUrl("https://github.com/biswaadev/bttune-android/issues/new") }
             )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))

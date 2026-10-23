@@ -681,7 +681,7 @@ fun AboutScreen(
 
                     LaunchedEffect(Unit) {
                         try {
-                            val fetched = client.getContributors("d0x-dev", "BTTUNE")
+                            val fetched = client.getContributors("biswaadev", "bttune-android")
                             founderCommits = fetched.associate { it.login to it.contributions }
                             contributors = fetched.filter { it.login != "d0x-dev" && it.login != "drkvenom786" }
                         } catch (e: Exception) {

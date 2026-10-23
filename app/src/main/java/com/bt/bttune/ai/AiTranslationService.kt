@@ -130,7 +130,7 @@ object AiTranslationService {
                 val requestBuilder = Request.Builder()
                     .url(effectiveBaseUrl)
                     .addHeader("Content-Type", "application/json")
-                    .addHeader("HTTP-Referer", "https://github.com/batz-dev/bttune-android")
+                    .addHeader("HTTP-Referer", "https://github.com/biswaadev/bttune-android")
                     .addHeader("X-Title", "BTTUNE")
 
                 if (effectiveApiKey.isNotBlank()) {

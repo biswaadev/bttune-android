@@ -193,7 +193,7 @@ class GitHubApiClient {
         }
     }
 
-    suspend fun getRecentReleases(owner: String = "d0x-dev", repo: String = "BTTUNE", perPage: Int = 10): List<GitHubReleaseItem> = withContext(Dispatchers.IO) {
+    suspend fun getRecentReleases(owner: String = "biswaadev", repo: String = "bttune-android", perPage: Int = 10): List<GitHubReleaseItem> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$baseUrl/repos/$owner/$repo/releases?per_page=$perPage")
             .header("Accept", "application/vnd.github.v3+json")
@@ -215,7 +215,7 @@ class GitHubApiClient {
         }
     }
 
-    suspend fun getRecentCommits(owner: String = "d0x-dev", repo: String = "BTTUNE", perPage: Int = 10): List<GitHubCommitSummary> = withContext(Dispatchers.IO) {
+    suspend fun getRecentCommits(owner: String = "biswaadev", repo: String = "bttune-android", perPage: Int = 10): List<GitHubCommitSummary> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$baseUrl/repos/$owner/$repo/commits?per_page=$perPage")
             .header("Accept", "application/vnd.github.v3+json")

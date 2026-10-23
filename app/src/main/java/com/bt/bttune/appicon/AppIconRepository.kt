@@ -29,7 +29,7 @@ object AppIconRepository {
     private const val PACKAGE_NAME = "com.bt.bttune"
 
     const val GITHUB_COMMUNITY_ICONS_URL =
-        "https://raw.githubusercontent.com/batz-dev/bttune-android/main/assets/icons/community_icons.json"
+        "https://raw.githubusercontent.com/biswaadev/bttune-android/main/assets/icons/community_icons.json"
 
     val DEFAULT_ICON = AppIcon(
         id = "default",
@@ -54,7 +54,7 @@ object AppIconRepository {
         isDefault = false,
         isCommunity = false,
         inApp = true,
-        svgUrl = "https://raw.githubusercontent.com/batz-dev/bttune-android/main/assets/icons/Airbeats_Winters.png"
+        svgUrl = "https://raw.githubusercontent.com/biswaadev/bttune-android/main/assets/icons/Airbeats_Winters.png"
     )
 
     val MELODY_HEARTS_ICON = AppIcon(
@@ -254,7 +254,7 @@ object AppIconRepository {
             *Submitted from BTTUNE App Icon Customizer*
         """.trimIndent()
         val bodyEncoded = java.net.URLEncoder.encode(bodyContent, "UTF-8")
-        return "https://github.com/batz-dev/bttune-android/issues/new?title=$titleEncoded&body=$bodyEncoded"
+        return "https://github.com/biswaadev/bttune-android/issues/new?title=$titleEncoded&body=$bodyEncoded"
     }
 
     /**
@@ -276,7 +276,7 @@ object AppIconRepository {
                     svgUrl = "https://" + svgUrl.substring(7)
                 }
                 if (svgUrl.isBlank() && id == "airbeats_winters") {
-                    svgUrl = "https://raw.githubusercontent.com/batz-dev/bttune-android/main/assets/icons/Airbeats_Winters.png"
+                    svgUrl = "https://raw.githubusercontent.com/biswaadev/bttune-android/main/assets/icons/Airbeats_Winters.png"
                 }
 
                 val matchingBuiltIn = BUILT_IN_ICONS.find { it.id == id }

@@ -46,7 +46,7 @@ object RemoteConfigManager {
     val DEFAULT_STATS_BASE_URL: String = ""
     val DEFAULT_LISTEN_TOGETHER_URL: String = ""
     val DEFAULT_WEBSITE_URL: String = ""
-    val DEFAULT_GITHUB_REPO: String = "batz-dev/bttune-android"
+    val DEFAULT_GITHUB_REPO: String = "biswaadev/bttune-android"
     val DEFAULT_UPDATE_API_URL: String = ""
     val DEFAULT_CRASH_WEBHOOK_URL: String = "https://airbeats-telegram-bot.darkxvenom44.workers.dev/crash"
     val DEFAULT_TELEGRAM_URL: String = "https://t.me/+vg3N1iU5x0ZmOTc9"
@@ -388,23 +388,23 @@ object RemoteConfigManager {
                 if (customUrl.endsWith("/latest")) customUrl else "$customUrl/latest"
             }
         }
-        val repo = githubRepo.ifBlank { "batz-dev/bttune-android" }.trim()
+        val repo = githubRepo.ifBlank { "biswaadev/bttune-android" }.trim()
         if (repo.isBlank()) return ""
         return if (isNightly) "https://api.github.com/repos/$repo/releases" else "https://api.github.com/repos/$repo/releases/latest"
     }
 
     fun getReleasesPageUrl(): String {
-        val repo = githubRepo.ifBlank { "batz-dev/bttune-android" }.trim()
-        return if (repo.isNotBlank()) "https://github.com/$repo/releases" else "https://github.com/batz-dev/bttune-android/releases"
+        val repo = githubRepo.ifBlank { "biswaadev/bttune-android" }.trim()
+        return if (repo.isNotBlank()) "https://github.com/$repo/releases" else "https://github.com/biswaadev/bttune-android/releases"
     }
 
     fun getLatestReleasePageUrl(): String {
-        val repo = githubRepo.ifBlank { "batz-dev/bttune-android" }.trim()
-        return if (repo.isNotBlank()) "https://github.com/$repo/releases/latest" else "https://github.com/batz-dev/bttune-android/releases/latest"
+        val repo = githubRepo.ifBlank { "biswaadev/bttune-android" }.trim()
+        return if (repo.isNotBlank()) "https://github.com/$repo/releases/latest" else "https://github.com/biswaadev/bttune-android/releases/latest"
     }
 
     fun getApkDownloadUrl(versionName: String, isNightly: Boolean): String {
-        val repo = githubRepo.ifBlank { "batz-dev/bttune-android" }.trim()
+        val repo = githubRepo.ifBlank { "biswaadev/bttune-android" }.trim()
         if (repo.isBlank()) return ""
         return if (isNightly) {
             "https://github.com/$repo/releases/download/v${versionName}-nightly/Airbeats-v${versionName}-Nightly.apk"
