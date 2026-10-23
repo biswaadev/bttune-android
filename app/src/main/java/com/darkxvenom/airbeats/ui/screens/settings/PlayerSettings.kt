@@ -67,6 +67,7 @@ import com.darkxvenom.airbeats.LocalPlayerAwareWindowInsets
 import com.darkxvenom.airbeats.LocalPlayerConnection
 import com.darkxvenom.airbeats.R
 import com.darkxvenom.airbeats.constants.AudioNormalizationKey
+import com.darkxvenom.airbeats.constants.PauseOnZeroVolumeKey
 import com.darkxvenom.airbeats.constants.AudioQuality
 import com.darkxvenom.airbeats.constants.AudioQualityKey
 import com.darkxvenom.airbeats.constants.AutoLoadMoreKey
@@ -179,6 +180,10 @@ fun PlayerSettings(
     )
     val (audioNormalization, onAudioNormalizationChange) = rememberPreference(
         AudioNormalizationKey,
+        defaultValue = false
+    )
+    val (pauseOnZeroVolume, onPauseOnZeroVolumeChange) = rememberPreference(
+        PauseOnZeroVolumeKey,
         defaultValue = false
     )
     val (autoLoadMore, onAutoLoadMoreChange) = rememberPreference(
@@ -754,6 +759,14 @@ fun PlayerSettings(
                     checked = if (isBypassActive) false else audioNormalization,
                     isEnabled = !isBypassActive,
                     onCheckedChange = onAudioNormalizationChange
+                )},
+
+                {SwitchPreference(
+                    title = { Text(stringResource(R.string.pause_on_zero_volume)) },
+                    description = stringResource(R.string.pause_on_zero_volume_desc),
+                    icon = { Icon(painterResource(R.drawable.volume_off), null) },
+                    checked = pauseOnZeroVolume,
+                    onCheckedChange = onPauseOnZeroVolumeChange
                 )},
 
                 {SwitchPreference(

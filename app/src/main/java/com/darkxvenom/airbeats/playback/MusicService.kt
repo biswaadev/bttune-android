@@ -6,7 +6,12 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.database.ContentObserver
 import android.database.SQLException
+import android.os.Handler
+import android.os.Looper
 import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.media.AudioDeviceCallback
@@ -81,6 +86,7 @@ import com.darkxvenom.airbeats.airconnect.AirConnectClient
 import com.darkxvenom.airbeats.MainActivity
 import com.darkxvenom.airbeats.R
 import com.darkxvenom.airbeats.constants.AudioNormalizationKey
+import com.darkxvenom.airbeats.constants.PauseOnZeroVolumeKey
 import com.darkxvenom.airbeats.constants.AudioQualityKey
 import com.darkxvenom.airbeats.constants.AutoLoadMoreKey
 import com.darkxvenom.airbeats.constants.AutoSkipNextOnErrorKey
@@ -388,6 +394,11 @@ class MusicService :
     private val audioFocusVolumeFactor = MutableStateFlow(1f)
     private val playbackFadeFactor = MutableStateFlow(1f)
     private val audioNormalizationEnabled = MutableStateFlow(true)
+    private var pauseOnZeroVolume: Boolean = false
+    private var lastMediaVolume: Int = -1
+    private var lastMediaMuted: Boolean = false
+    private var volumeObserver: ContentObserver? = null
+    private var volumeChangeReceiver: BroadcastReceiver? = null
     private val maxSafeGainFactor = MAX_AUDIO_NORMALIZATION_FACTOR
     private var crossfadeEnabled = false
     private var crossfadeDurationMs = 0L
@@ -580,6 +591,7 @@ class MusicService :
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         setupAudioFocus()
+        setupZeroVolumeListener()
         val bitPerfect = UsbBitPerfectOutput(audioManager)
         usbBitPerfectOutput = bitPerfect
         setupUsbBitPerfectListener(bitPerfect)
@@ -958,6 +970,13 @@ class MusicService :
         }
 
         dataStore.data
+            .map { it[PauseOnZeroVolumeKey] ?: false }
+            .distinctUntilChanged()
+            .collectLatest(scope) { enabled ->
+                pauseOnZeroVolume = enabled
+            }
+
+        dataStore.data
             .map { it[DiscordTokenKey] to (it[EnableDiscordRPCKey] ?: true) }
             .debounce(300)
             .distinctUntilChanged()
@@ -1297,6 +1316,124 @@ class MusicService :
                 audioManager.abandonAudioFocus(audioFocusChangeListener)
             }
             hasAudioFocus = false
+        }
+    }
+
+    private fun setupZeroVolumeListener() {
+        lastMediaVolume = try {
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        } catch (_: Exception) {
+            -1
+        }
+        lastMediaMuted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            false
+        }
+
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                super.onChange(selfChange, uri)
+                checkZeroVolumeAndPause()
+            }
+        }
+        volumeObserver = observer
+        try {
+            contentResolver.registerContentObserver(
+                Settings.System.CONTENT_URI,
+                true,
+                observer
+            )
+        } catch (e: Exception) {
+            Timber.tag(TAG).w(e, "Failed to register volume content observer")
+        }
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == "android.media.VOLUME_CHANGED_ACTION") {
+                    val streamType = intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1)
+                    if (streamType == AudioManager.STREAM_MUSIC || streamType == -1) {
+                        checkZeroVolumeAndPause()
+                    }
+                } else {
+                    checkZeroVolumeAndPause()
+                }
+            }
+        }
+        volumeChangeReceiver = receiver
+        val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+                } catch (_: SecurityException) {
+                    registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                }
+            } else {
+                registerReceiver(receiver, filter)
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).w(e, "Failed to register volume change broadcast receiver")
+        }
+    }
+
+    private fun releaseZeroVolumeListener() {
+        try {
+            volumeObserver?.let { contentResolver.unregisterContentObserver(it) }
+        } catch (_: Exception) {}
+        volumeObserver = null
+
+        try {
+            volumeChangeReceiver?.let { unregisterReceiver(it) }
+        } catch (_: Exception) {}
+        volumeChangeReceiver = null
+    }
+
+    private fun checkZeroVolumeAndPause() {
+        if (!::audioManager.isInitialized) return
+        val currentVol = try {
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        } catch (_: Exception) {
+            return
+        }
+        val isMuted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            false
+        }
+
+        if (currentVol == lastMediaVolume && isMuted == lastMediaMuted) {
+            return
+        }
+
+        val isZeroNow = currentVol == 0 || isMuted
+        val wasZeroBefore = (lastMediaVolume == 0) || lastMediaMuted
+
+        lastMediaVolume = currentVol
+        lastMediaMuted = isMuted
+
+        if (pauseOnZeroVolume && isZeroNow && !wasZeroBefore) {
+            Timber.tag(TAG).d("Pause on zero volume triggered: currentVol=$currentVol, isMuted=$isMuted")
+            if (isCasting.value) {
+                castPlayback?.pause()
+            } else if (player.isPlaying || player.playWhenReady) {
+                player.pause()
+            }
+        }
+    }
+
+    fun setPauseOnZeroVolume(enabled: Boolean) {
+        pauseOnZeroVolume = enabled
+        scope.launch {
+            dataStore.edit { it[PauseOnZeroVolumeKey] = enabled }
         }
     }
 
@@ -4158,6 +4295,7 @@ class MusicService :
         }
         discordRpc = null
         abandonAudioFocus()
+        releaseZeroVolumeListener()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             audioDeviceCallback?.let {
                 audioManager.unregisterAudioDeviceCallback(it)
