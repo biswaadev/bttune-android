@@ -260,44 +260,7 @@ fun UserCard(
     }
 }
 
-// ==================== SOCIAL ICON ROW ====================
 
-@Composable
-fun SocialIconRow(uriHandler: UriHandler) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable { uriHandler.openUri("https://t.me/freek311") }
-            .shadow(4.dp, RoundedCornerShape(28.dp)),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f)
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                modifier = Modifier.size(24.dp),
-                painter = painterResource(R.drawable.telegram),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = "Contact: Telegram @freek311",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
 
 // ==================== MAIN ABOUT SCREEN ====================
 
@@ -548,10 +511,7 @@ fun AboutScreen(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
-                    // Social Icons (Contact Telegram)
-                    SocialIconRow(uriHandler)
-
-                    Spacer(Modifier.height(16.dp))
+                    
 
                     // Developers Title - LEFT ALIGNED
                     Row(
