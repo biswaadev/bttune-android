@@ -216,7 +216,7 @@ class VoiceAssistantService : Service() {
         val text = statusText ?: getString(R.string.voice_notification_text)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.airbeats_monochrome)
+            .setSmallIcon(R.drawable.ic_bttune_logo)
             .setContentTitle(getString(R.string.voice_notification_title))
             .setContentText(text)
             .setContentIntent(contentIntent)
@@ -229,7 +229,7 @@ class VoiceAssistantService : Service() {
                 listenIntent
             )
             .addAction(
-                R.drawable.airbeats_monochrome,
+                R.drawable.ic_bttune_logo,
                 getString(R.string.voice_notification_stop),
                 stopIntent
             )

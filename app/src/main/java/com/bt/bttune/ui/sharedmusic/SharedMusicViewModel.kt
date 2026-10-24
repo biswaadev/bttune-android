@@ -118,7 +118,7 @@ class SharedMusicViewModel @Inject constructor(
     ) {
         currentJob?.cancel()
         currentJob = viewModelScope.launch {
-            _uiState.value = SharedMusicUiState.Processing(IdentificationStep.SEARCHING_AIRBEATS)
+            _uiState.value = SharedMusicUiState.Processing(IdentificationStep.SEARCHING_BTTUNE)
             val song = IdentifiedSong(
                 title = title,
                 artist = artist,

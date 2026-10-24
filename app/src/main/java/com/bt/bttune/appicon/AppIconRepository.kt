@@ -45,16 +45,16 @@ object AppIconRepository {
 
     val WINTER_ICON = AppIcon(
         id = "airbeats_winters",
-        title = "Airbeats Winters",
+        title = "BTTUNE Winters",
         subtitle = "Winter season frosted cabin & glowing headphones",
         author = "@Dark",
-        aliasName = "$PACKAGE_NAME.launcher.AirbeatsWinters",
+        aliasName = "$PACKAGE_NAME.launcher.BTTUNEWinters",
         bgColors = listOf(Color(0xFF061838), Color(0xFF0F386E)),
         fgTint = null,
         isDefault = false,
         isCommunity = false,
         inApp = true,
-        svgUrl = "https://raw.githubusercontent.com/biswaadev/bttune-android/main/assets/icons/Airbeats_Winters.png"
+        svgUrl = "https://raw.githubusercontent.com/biswaadev/bttune-android/main/assets/icons/BTTUNE_Winters.png"
     )
 
     val MELODY_HEARTS_ICON = AppIcon(
@@ -276,7 +276,7 @@ object AppIconRepository {
                     svgUrl = "https://" + svgUrl.substring(7)
                 }
                 if (svgUrl.isBlank() && id == "airbeats_winters") {
-                    svgUrl = "https://raw.githubusercontent.com/biswaadev/bttune-android/main/assets/icons/Airbeats_Winters.png"
+                    svgUrl = "https://raw.githubusercontent.com/biswaadev/bttune-android/main/assets/icons/BTTUNE_Winters.png"
                 }
 
                 val matchingBuiltIn = BUILT_IN_ICONS.find { it.id == id }

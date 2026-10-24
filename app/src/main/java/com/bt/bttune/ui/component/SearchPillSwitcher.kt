@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.sp
 
 enum class SearchTab(val title: String) {
     RECENT_SEARCHES("Recent Searches"),
-    AIRBEATS_CHARTS("BTTUNE Charts"),
+    BTTUNE_CHARTS("BTTUNE Charts"),
     BROWSE_ALL("Browse all")
 }
 

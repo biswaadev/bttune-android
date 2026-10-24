@@ -208,7 +208,7 @@ fun MaterialSearchScreen(
                                 }
                             }
                         }
-                        com.bt.bttune.ui.component.SearchTab.AIRBEATS_CHARTS -> {
+                        com.bt.bttune.ui.component.SearchTab.BTTUNE_CHARTS -> {
                             airbeatsChartsItems(
                                 navController = navController,
                                 viewModel = chartsViewModel
@@ -334,7 +334,7 @@ fun MaterialSearchScreen(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        } else if (selectedTab == com.bt.bttune.ui.component.SearchTab.AIRBEATS_CHARTS) {
+                        } else if (selectedTab == com.bt.bttune.ui.component.SearchTab.BTTUNE_CHARTS) {
                             IconButton(onClick = { showRegionSheet = true }) {
                                 Icon(
                                     painter = painterResource(R.drawable.globe_search),

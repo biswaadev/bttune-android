@@ -100,8 +100,8 @@ class LanTogetherServer(
                     val packet = DatagramPacket(buf, buf.size)
                     socket.receive(packet)
                     val msg = String(packet.data, 0, packet.length, Charsets.UTF_8).trim()
-                    if (msg.startsWith("AIRBEATS_DISCOVER")) {
-                        val replyMsg = "AIRBEATS_HOST:$port:$hostDisplayName:$sessionId:${participants.size}"
+                    if (msg.startsWith("BTTUNE_DISCOVER")) {
+                        val replyMsg = "BTTUNE_HOST:$port:$hostDisplayName:$sessionId:${participants.size}"
                         val replyData = replyMsg.toByteArray(Charsets.UTF_8)
                         val replyPacket = DatagramPacket(replyData, replyData.size, packet.address, packet.port)
                         socket.send(replyPacket)
@@ -523,7 +523,7 @@ class LanTogetherServer(
         return ListenTogetherSession(
             code = "$hostIp:$port",
             participantId = participantId,
-            joinUrl = "airbeats://together?host=$hostIp&port=$port&sid=$sessionId",
+            joinUrl = "bttune://together?host=$hostIp&port=$port&sid=$sessionId",
             participants = participants.size,
             participantList = participants.values.sortedByDescending { it.isHost },
             hostName = hostDisplayName,
@@ -570,7 +570,7 @@ class LanTogetherServer(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>BTTUNE - Listen Together</title>
-  <link rel="icon" href="https://raw.githubusercontent.com/drkvenom786/Airbeats/refs/heads/main/icon2.png" type="image/png">
+  <link rel="icon" href="https://raw.githubusercontent.com/drkvenom786/BTTUNE/refs/heads/main/icon2.png" type="image/png">
   <style>
     :root {
       --bg: #ffffff;
@@ -1596,9 +1596,9 @@ class LanTogetherServer(
     <div class="top-bar">
       <div class="brand-wrap">
         <div class="brand-icon">
-          <img src="https://raw.githubusercontent.com/drkvenom786/Airbeats/refs/heads/main/icon2.png" alt="BTTUNE" />
+          <img src="https://raw.githubusercontent.com/drkvenom786/BTTUNE/refs/heads/main/icon2.png" alt="BTTUNE" />
         </div>
-        <span class="brand-name">AIRBEATS</span>
+        <span class="brand-name">BTTUNE</span>
       </div>
 
       <button id="themeToggleBtn" class="circle-btn" onclick="toggleTheme()" aria-label="Toggle Theme" title="Toggle Light / Dark Mode">
@@ -1706,8 +1706,8 @@ class LanTogetherServer(
 
         <!-- Bottom Actions Row -->
         <div class="bottom-actions">
-          <a id="appDeepLink" href="airbeats://together?host=$hostIp&port=$port&sid=$sessionId" class="btn-open-app">
-            <img src="https://raw.githubusercontent.com/drkvenom786/Airbeats/refs/heads/main/icon2.png" alt="Logo" />
+          <a id="appDeepLink" href="bttune://together?host=$hostIp&port=$port&sid=$sessionId" class="btn-open-app">
+            <img src="https://raw.githubusercontent.com/drkvenom786/BTTUNE/refs/heads/main/icon2.png" alt="Logo" />
             <span>Open in BTTUNE</span>
           </a>
 

@@ -32,7 +32,7 @@ enum class IdentificationStep {
     ANALYZING_MEDIA,
     EXTRACTING_AUDIO,
     IDENTIFYING,
-    SEARCHING_AIRBEATS,
+    SEARCHING_BTTUNE,
     COMPLETE
 }
 
@@ -188,7 +188,7 @@ class IdentifySharedMusicUseCase(
             }
 
             // 5. Search existing BTTUNE providers
-            emit(Pair(IdentificationStep.SEARCHING_AIRBEATS, null))
+            emit(Pair(IdentificationStep.SEARCHING_BTTUNE, null))
             GlobalLog.append(Log.INFO, TAG, "Searching BTTUNE library for '${identifiedSong.title}' - '${identifiedSong.artist}'...")
             val candidates = providerSearchManager.searchProviders(identifiedSong)
             val bestMatch = candidates.firstOrNull()

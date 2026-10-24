@@ -2571,14 +2571,14 @@ fun HeadphoneSplashScreen(statusText: String? = null) {
         ) {
             Box(
                 modifier = Modifier
-                    .width(220.dp)
-                    .height(145.dp)
-                    .clipToBounds()
+                    .size(130.dp)
+                    .clip(CircleShape),
+                contentAlignment = Alignment.Center
             ) {
                 Image(
-                    painter = painterResource(R.drawable.airbeats_logo),
+                    painter = painterResource(R.drawable.ic_bttune_logo),
                     contentDescription = null,
-                    modifier = Modifier.size(220.dp)
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 

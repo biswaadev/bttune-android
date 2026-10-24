@@ -536,7 +536,7 @@ private fun AppInfoHeaderCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.airbeats_monochrome),
+                        painter = painterResource(R.drawable.ic_bttune_logo),
                         contentDescription = "BTTUNE Logo",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(30.dp)

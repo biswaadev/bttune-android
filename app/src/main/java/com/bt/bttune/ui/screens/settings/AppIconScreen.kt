@@ -89,7 +89,7 @@ fun AppIconScreen(
         refreshCommunityIcons()
     }
 
-    // Top section: inApp == true (Default Brand, Airbeats Winters, etc.)
+    // Top section: inApp == true (Default Brand, BTTUNE Winters, etc.)
     val inAppIcons = remember(builtInIcons, communityIcons) {
         val remoteInApp = communityIcons.filter { it.inApp }
         (builtInIcons + remoteInApp).distinctBy { it.id }
@@ -214,7 +214,7 @@ fun AppIconScreen(
                     }
                 }
 
-                // 3. Official App Icons (Default Brand, Airbeats Winters, etc.)
+                // 3. Official App Icons (Default Brand, BTTUNE Winters, etc.)
                 items(inAppIcons.size) { index ->
                     val icon = inAppIcons[index]
                     val isSelected = activeIconId == icon.id

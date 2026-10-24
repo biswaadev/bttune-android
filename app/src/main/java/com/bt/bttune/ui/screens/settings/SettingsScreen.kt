@@ -1566,7 +1566,7 @@ fun ProfileSection(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.airbeats_monochrome),
+                        painter = painterResource(R.drawable.ic_bttune_logo),
                         contentDescription = "Logo de BTTUNE",
                         modifier = Modifier.fillMaxSize(),
                         tint = MaterialTheme.colorScheme.primary

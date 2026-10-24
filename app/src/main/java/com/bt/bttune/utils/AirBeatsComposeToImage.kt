@@ -378,7 +378,7 @@ object BTTUNEComposeToImage {
     ) {
         val baseSize  = cardSize.toFloat()
         val logoSize  = (baseSize * 0.045f).toInt()
-        val rawLogo   = context.getDrawable(R.drawable.airbeats)?.toBitmap(logoSize, logoSize)
+        val rawLogo   = context.getDrawable(R.drawable.ic_bttune_logo)?.toBitmap(logoSize, logoSize)
         val logo = rawLogo?.let { source ->
             val colored = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
             Canvas(colored).drawBitmap(source, 0f, 0f, Paint().apply {

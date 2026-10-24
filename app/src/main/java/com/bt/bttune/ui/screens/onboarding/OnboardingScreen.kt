@@ -329,7 +329,7 @@ private fun WelcomeStep(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.airbeats_monochrome),
+                    painter = painterResource(R.drawable.ic_bttune_logo),
                     contentDescription = null,
                     tint = primaryColor,
                     modifier = Modifier.size(52.dp)

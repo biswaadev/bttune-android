@@ -407,7 +407,7 @@ object RemoteConfigManager {
         val repo = githubRepo.ifBlank { "biswaadev/bttune-android" }.trim()
         if (repo.isBlank()) return ""
         return if (isNightly) {
-            "https://github.com/$repo/releases/download/v${versionName}-nightly/Airbeats-v${versionName}-Nightly.apk"
+            "https://github.com/$repo/releases/download/v${versionName}-nightly/BTTUNE-v${versionName}-Nightly.apk"
         } else {
             "https://github.com/$repo/releases/download/v$versionName/BTTUNE_v${versionName}_signed.apk"
         }

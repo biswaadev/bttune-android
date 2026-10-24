@@ -572,7 +572,7 @@ object ComposeToImage {
         logoSizeMultiplier: Float
     ) {
         val logoBitmap = getBitmapFromVectorDrawable(
-            context, R.drawable.airbeats, logoSize.toInt(), logoSize.toInt()
+            context, R.drawable.ic_bttune_logo, logoSize.toInt(), logoSize.toInt()
         ) ?: return
 
         val appName = context.getString(R.string.app_name)

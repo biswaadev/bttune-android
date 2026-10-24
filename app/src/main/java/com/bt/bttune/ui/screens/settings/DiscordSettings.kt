@@ -606,7 +606,7 @@ fun EnhancedRichPresence(
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     Image(
-                                                        painter = painterResource(R.drawable.airbeats),
+                                                        painter = painterResource(R.drawable.ic_bttune_logo),
                                                         contentDescription = "BTTUNE",
                                                         modifier = Modifier
                                                             .size(20.dp)
@@ -738,7 +738,7 @@ fun EnhancedRichPresence(
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
-                                painter = painterResource(R.drawable.airbeats),
+                                painter = painterResource(R.drawable.ic_bttune_logo),
                                 contentDescription = "BTTUNE",
                                 modifier = Modifier.size(12.dp),
                                 colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimary)

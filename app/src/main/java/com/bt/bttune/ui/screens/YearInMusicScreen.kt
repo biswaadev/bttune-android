@@ -1,5 +1,5 @@
 /*
- * Airbeats Insight — Year in Music, redesigned (2026)
+ * BTTUNE Insight — Year in Music, redesigned (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -352,7 +352,7 @@ fun YearInMusicScreen(
                     // Brand label — centered
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text       = "Airbeats",
+                            text       = "BTTUNE",
                             style      = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color      = SnowDim,
@@ -1432,7 +1432,7 @@ private fun SummaryPage(
 
             // Header
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Airbeats branding row
+                // BTTUNE branding row
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1452,7 +1452,7 @@ private fun SummaryPage(
                     }
                     Column {
                         Text(
-                            "Airbeats Insight",
+                            "BTTUNE Insight",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = Snow,
@@ -1559,12 +1559,12 @@ private fun SummaryPage(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    joinByBullet("Airbeats", year.toString()),
+                    joinByBullet("BTTUNE", year.toString()),
                     style = MaterialTheme.typography.labelSmall,
                     color = SnowDim,
                 )
                 Text(
-                    "Airbeats Insight",
+                    "BTTUNE Insight",
                     style = MaterialTheme.typography.labelSmall,
                     color = SnowDim,
                 )

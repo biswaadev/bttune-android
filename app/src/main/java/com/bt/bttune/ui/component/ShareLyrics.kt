@@ -692,7 +692,7 @@ fun LyricsImageCardPreview(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Image(
-                                    painter = painterResource(id = R.drawable.airbeats),
+                                    painter = painterResource(id = R.drawable.ic_bttune_logo),
                                     contentDescription = null,
                                     modifier = Modifier.size((28 * logoSizeMultiplier).dp)
                                 )

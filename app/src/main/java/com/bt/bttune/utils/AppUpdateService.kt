@@ -193,7 +193,7 @@ class AppUpdateService : Service() {
 
     private fun notification(title: String, progress: Int, ongoing: Boolean) =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.airbeats_monochrome)
+            .setSmallIcon(R.drawable.ic_bttune_logo)
             .setContentTitle(title)
             .setContentText(if (ongoing && progress > 0) "$progress%" else null)
             .setOnlyAlertOnce(true)
@@ -245,7 +245,7 @@ class AppUpdateService : Service() {
         notificationManager.notify(
             COMPLETED_NOTIFICATION_ID,
             NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.airbeats_monochrome)
+                .setSmallIcon(R.drawable.ic_bttune_logo)
                 .setContentTitle("Update ready to install")
                 .setContentText(message)
                 .setContentIntent(contentIntent)
@@ -259,7 +259,7 @@ class AppUpdateService : Service() {
         notificationManager.notify(
             COMPLETED_NOTIFICATION_ID,
             NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.airbeats_monochrome)
+                .setSmallIcon(R.drawable.ic_bttune_logo)
                 .setContentTitle(title)
                 .apply {
                     if (!message.isNullOrBlank()) {

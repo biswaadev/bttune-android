@@ -37,7 +37,7 @@ object LanTogetherClient {
 
     fun normalizeHostAddress(raw: String, defaultPort: Int = 8765): String {
         val trimmed = raw.trim()
-        if (trimmed.startsWith("airbeats://together", ignoreCase = true)) {
+        if (trimmed.startsWith("bttune://together", ignoreCase = true)) {
             val uri = android.net.Uri.parse(trimmed)
             val host = uri.getQueryParameter("host")
             val port = uri.getQueryParameter("port") ?: defaultPort.toString()
@@ -214,7 +214,7 @@ object LanTogetherClient {
                     broadcast = true
                     soTimeout = 500
                 }
-                val msg = "AIRBEATS_DISCOVER"
+                val msg = "BTTUNE_DISCOVER"
                 val data = msg.toByteArray(Charsets.UTF_8)
                 val broadcastTargets = listOfNotNull(
                     runCatching { InetAddress.getByName("255.255.255.255") }.getOrNull(),
@@ -234,7 +234,7 @@ object LanTogetherClient {
                         val packet = DatagramPacket(buf, buf.size)
                         udpSocket.receive(packet)
                         val response = String(packet.data, 0, packet.length, Charsets.UTF_8).trim()
-                        if (response.startsWith("AIRBEATS_HOST")) {
+                        if (response.startsWith("BTTUNE_HOST")) {
                             val parts = response.split(":")
                             val hostPort = parts.getOrNull(1)?.toIntOrNull() ?: port
                             val hostName = parts.getOrNull(2)?.takeIf { it.isNotBlank() } ?: "BTTUNE Host"

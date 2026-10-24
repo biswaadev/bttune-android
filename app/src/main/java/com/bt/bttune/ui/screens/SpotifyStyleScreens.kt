@@ -631,7 +631,7 @@ fun SpotifySearchScreen(
                         }
                     }
                 }
-                com.bt.bttune.ui.component.SearchTab.AIRBEATS_CHARTS -> {
+                com.bt.bttune.ui.component.SearchTab.BTTUNE_CHARTS -> {
                     airbeatsChartsItems(
                         navController = navController,
                         viewModel = chartsViewModel

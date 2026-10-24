@@ -30,7 +30,7 @@ sealed interface LastFmAuthState {
     data class Error(val message: String) : LastFmAuthState
 }
 
-const val LAST_FM_AUTH_CALLBACK_URI = "airbeats://auth-callback"
+const val LAST_FM_AUTH_CALLBACK_URI = "bttune://auth-callback"
 
 @Singleton
 class LastFmAuthRepository @Inject constructor(

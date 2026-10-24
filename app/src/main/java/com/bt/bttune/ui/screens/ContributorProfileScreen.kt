@@ -170,7 +170,7 @@ fun ContributorProfileScreen(
                     }
                 }
 
-                // AIRBEATS COMMITS
+                // BTTUNE COMMITS
                 if (commits.isNotEmpty()) {
                     item {
                         Text("BTTUNE Commits", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

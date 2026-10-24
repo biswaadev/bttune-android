@@ -562,7 +562,7 @@ class MusicService :
                 R.string.music_player
             )
                 .apply {
-                    setSmallIcon(R.drawable.airbeats_monochrome)
+                    setSmallIcon(R.drawable.ic_bttune_logo)
                 },
         )
         player =

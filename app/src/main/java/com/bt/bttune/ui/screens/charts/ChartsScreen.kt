@@ -104,7 +104,7 @@ import com.bt.bttune.utils.rememberPreference
 import com.bt.bttune.viewmodels.ChartsViewModel
 
 enum class ChartTabType(val title: String, val icon: ImageVector) {
-    AIRBEATS("BTTUNE", Icons.Default.TrendingUp),
+    BTTUNE("BTTUNE", Icons.Default.TrendingUp),
     JIOSAAVN("JioSaavn", Icons.Default.Whatshot),
     APPLE("Apple Music", Icons.Default.MusicNote),
     YOUTUBE("YouTube", Icons.Default.PlayArrow),
@@ -123,7 +123,7 @@ fun ChartsScreen(
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current
 
-    var selectedTab by remember { mutableStateOf(ChartTabType.AIRBEATS) }
+    var selectedTab by remember { mutableStateOf(ChartTabType.BTTUNE) }
     var regionCode by rememberPreference(key = ChartRegionKey, defaultValue = "system")
     var showRegionSheet by remember { mutableStateOf(false) }
 
@@ -266,7 +266,7 @@ fun ChartsScreen(
                 modifier = Modifier.fillMaxSize()
             ) { tab ->
                 when (tab) {
-                    ChartTabType.AIRBEATS -> {
+                    ChartTabType.BTTUNE -> {
                         LazyColumn(
                             contentPadding = PaddingValues(
                                 top = 8.dp,

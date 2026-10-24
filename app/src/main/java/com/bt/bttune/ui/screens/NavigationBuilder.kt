@@ -241,7 +241,7 @@ fun NavGraphBuilder.navigationBuilder(
     composable(
         route = "listen_together",
         deepLinks = listOf(
-            navDeepLink { uriPattern = "airbeats://together.*" }
+            navDeepLink { uriPattern = "bttune://together.*" }
         )
     ) {
         ListenTogetherScreen(navController, scrollBehavior)

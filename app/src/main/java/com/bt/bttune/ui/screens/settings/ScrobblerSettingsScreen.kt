@@ -680,7 +680,7 @@ fun ScrobblerSettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "1. In your browser, tap \"Yes, allow access\" to authorize Airbeats on your Last.fm account.",
+                        "1. In your browser, tap \"Yes, allow access\" to authorize BTTUNE on your Last.fm account.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(

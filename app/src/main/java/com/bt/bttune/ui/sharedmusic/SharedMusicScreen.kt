@@ -301,7 +301,7 @@ private fun ProcessingContent(
             IdentificationStep.ANALYZING_MEDIA -> stringResource(R.string.analyzing_media)
             IdentificationStep.EXTRACTING_AUDIO -> stringResource(R.string.extracting_audio)
             IdentificationStep.IDENTIFYING -> stringResource(R.string.recognizing_song)
-            IdentificationStep.SEARCHING_AIRBEATS -> stringResource(R.string.searching_airbeats)
+            IdentificationStep.SEARCHING_BTTUNE -> stringResource(R.string.searching_bttune)
             IdentificationStep.COMPLETE -> stringResource(R.string.music_found)
         }
 
@@ -446,7 +446,7 @@ private fun SuccessContent(
                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    stringResource(R.string.play_in_airbeats),
+                    stringResource(R.string.play_in_bttune),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )

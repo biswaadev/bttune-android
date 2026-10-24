@@ -40,7 +40,7 @@ class LastFmSessionPreferences @Inject constructor(
         const val OLD_DEFAULT_API_KEY = "8a213904535359a35d944d1885b5976b"
         const val OLD_DEFAULT_API_SECRET = "9a7569b9f7cb2f43a2906df0dfd66df2"
 
-        // Production Last.fm credentials for Airbeats
+        // Production Last.fm credentials for BTTUNE
         const val DEFAULT_API_KEY = "e4ff17cfd46f9de0433018bc72d8f8e4"
         const val DEFAULT_API_SECRET = "91a200bc71d725949101232c96020733"
     }

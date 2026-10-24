@@ -1080,7 +1080,7 @@
     <string name="extracting_audio">Extracting audio segment…</string>
     <string name="selecting_segment">Selecting clearest music segment…</string>
     <string name="recognizing_song">Recognizing track…</string>
-    <string name="searching_airbeats">Finding song in BTTUNE…</string>
+    <string name="searching_bttune">Finding song in BTTUNE…</string>
     <string name="music_found">Music Found</string>
     <string name="no_music_found_title">Couldn\'t identify the music</string>
     <string name="no_music_found_desc">Try sharing a section where the music is clearer and louder.</string>
@@ -1088,7 +1088,7 @@
     <string name="unsupported_media">This media format cannot be processed.</string>
     <string name="network_error_identify_title">No Internet Connection</string>
     <string name="network_error_identify_desc">Music identification requires an active internet connection.</string>
-    <string name="play_in_airbeats">Play in BTTUNE</string>
+    <string name="play_in_bttune">Play in BTTUNE</string>
     <string name="url_share_title">Shared Link Received</string>
     <string name="url_share_desc">The source app shared a web link instead of the media file. To identify the music, please download or save the video/audio and share the file directly to BTTUNE.</string>
     <string name="audd_token_title">Music Recognition Token</string>
