@@ -460,7 +460,7 @@ class MainActivity : FragmentActivity() {
 
         // 🔥 Version-specific FCM topic synchronization & auto-cleanup of outdated versions
         val versionName = BuildConfig.VERSION_NAME
-        val fcmPrefs = getSharedPreferences("airbeats_fcm_prefs", Context.MODE_PRIVATE)
+        val fcmPrefs = getSharedPreferences("bttune_fcm_prefs", Context.MODE_PRIVATE)
         val lastSubscribedVersion = fcmPrefs.getString("last_subscribed_version", null)
 
         if (!lastSubscribedVersion.isNullOrBlank() && lastSubscribedVersion != versionName) {
@@ -1969,11 +1969,7 @@ class MainActivity : FragmentActivity() {
                                         )
                                     }
 
-                                    com.bt.bttune.ui.component.DeveloperNewsPopupDialog(
-                                        onNavigateToNews = {
-                                            navController.navigate("settings/developer_news")
-                                        }
-                                    )
+
                                 }
 
                                 val ringtoneUiState by ringtoneViewModel.uiState.collectAsState()

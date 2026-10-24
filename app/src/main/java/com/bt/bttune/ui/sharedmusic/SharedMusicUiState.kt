@@ -9,7 +9,7 @@ sealed class SharedMusicUiState {
     data class Processing(val step: IdentificationStep) : SharedMusicUiState()
     data class Success(
         val identifiedSong: IdentifiedSong,
-        val airBeatsMatch: ProviderSong?,
+        val btTuneMatch: ProviderSong?,
         val candidates: List<ProviderSong>
     ) : SharedMusicUiState()
     data object NoMusicFound : SharedMusicUiState()

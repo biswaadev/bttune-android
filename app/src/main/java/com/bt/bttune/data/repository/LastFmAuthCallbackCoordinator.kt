@@ -17,7 +17,7 @@ class LastFmAuthCallbackCoordinator @Inject constructor() {
     @Synchronized
     fun capture(intent: Intent?): Boolean {
         val uri = intent?.data ?: return false
-        if (uri.scheme != "airbeats" || uri.host != "auth-callback") return false
+        if (uri.scheme != "bttune" || uri.host != "auth-callback") return false
 
         val token = uri.getQueryParameter("token")?.trim().orEmpty()
         if (token.isEmpty()) return false

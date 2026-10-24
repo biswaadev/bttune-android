@@ -85,7 +85,7 @@ class LanTogetherServer(
         stopUdpDiscoveryResponder()
         runCatching {
             val wifiManager = context?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-            multicastLock = wifiManager?.createMulticastLock("airbeats_lan_host_discovery")?.apply {
+            multicastLock = wifiManager?.createMulticastLock("bttune_lan_host_discovery")?.apply {
                 setReferenceCounted(false)
                 acquire()
             }
@@ -1811,14 +1811,14 @@ class LanTogetherServer(
       var current = getEffectiveTheme();
       var next = (current === 'dark') ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      try { localStorage.setItem('airbeats_theme', next); } catch (e) {}
+      try { localStorage.setItem('bttune_theme', next); } catch (e) {}
       updateThemeIcon();
       updateVolumeUi();
       showToast('Switched to ' + next + ' mode');
     }
 
     try {
-      var savedTheme = localStorage.getItem('airbeats_theme');
+      var savedTheme = localStorage.getItem('bttune_theme');
       if (savedTheme === 'light' || savedTheme === 'dark') {
         document.documentElement.setAttribute('data-theme', savedTheme);
       } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {

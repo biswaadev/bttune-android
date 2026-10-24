@@ -6,7 +6,7 @@ import com.bt.bttune.songs.IdentifiedSong
 sealed class IdentificationOutcome {
     data class Success(
         val song: IdentifiedSong,
-        val airBeatsMatch: ProviderSong?,
+        val btTuneMatch: ProviderSong?,
         val candidates: List<ProviderSong> = emptyList()
     ) : IdentificationOutcome()
 

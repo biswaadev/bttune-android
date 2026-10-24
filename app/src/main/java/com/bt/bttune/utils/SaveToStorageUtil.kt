@@ -44,7 +44,7 @@ import java.io.FileOutputStream
 
 object SaveToStorageUtil {
     private const val TAG = "SaveToStorageUtil"
-    private const val CHANNEL_ID = "airbeats_storage_downloads"
+    private const val CHANNEL_ID = "bttune_storage_downloads"
     private const val CHANNEL_NAME = "Storage Downloads"
 
     const val ACTION_CANCEL_SAVE = "com.bt.bttune.action.CANCEL_SAVE_TO_STORAGE"

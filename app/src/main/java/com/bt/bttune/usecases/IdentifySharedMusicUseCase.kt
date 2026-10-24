@@ -199,7 +199,7 @@ class IdentifySharedMusicUseCase(
                     IdentificationStep.COMPLETE,
                     IdentificationOutcome.Success(
                         song = identifiedSong,
-                        airBeatsMatch = bestMatch,
+                        btTuneMatch = bestMatch,
                         candidates = candidates
                     )
                 )

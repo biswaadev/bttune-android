@@ -96,7 +96,7 @@ object BTTUNEStatsCloudSync {
         )
     }
 
-    const val PREFERENCES_NAME = "airbeats_global_stats"
+    const val PREFERENCES_NAME = "bttune_global_stats"
     const val KEY_USER_ID = "global_stats_user_id"
     const val KEY_USER_NUMBER = "global_stats_user_number"
     const val KEY_LAST_UPLOAD_DAY = "last_global_stats_upload_day"

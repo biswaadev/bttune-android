@@ -476,7 +476,7 @@ private fun HomeScreenMockupCard(
                             contentDescription = icon.title,
                             modifier = Modifier.fillMaxSize(0.72f)
                         )
-                    } else if (icon.id == "airbeats_winters") {
+                    } else if (icon.id == "bttune_winters") {
                         Image(
                             painter = painterResource(R.mipmap.ic_launcher_winter_foreground),
                             contentDescription = icon.title,
@@ -624,7 +624,7 @@ private fun InAppIconCard(
                         contentDescription = icon.title,
                         modifier = Modifier.fillMaxSize(0.72f)
                     )
-                } else if (icon.id == "airbeats_winters") {
+                } else if (icon.id == "bttune_winters") {
                     Image(
                         painter = painterResource(R.mipmap.ic_launcher_winter_foreground),
                         contentDescription = icon.title,

@@ -6,7 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.wrapContentHeight
-import com.bt.bttune.ui.screens.search.airbeatsChartsItems
+import com.bt.bttune.ui.screens.search.bttuneChartsItems
 import com.bt.bttune.ui.screens.search.recentSearchesItems
 import androidx.compose.animation.togetherWith
 import kotlinx.coroutines.launch
@@ -632,7 +632,7 @@ fun SpotifySearchScreen(
                     }
                 }
                 com.bt.bttune.ui.component.SearchTab.BTTUNE_CHARTS -> {
-                    airbeatsChartsItems(
+                    bttuneChartsItems(
                         navController = navController,
                         viewModel = chartsViewModel
                     )

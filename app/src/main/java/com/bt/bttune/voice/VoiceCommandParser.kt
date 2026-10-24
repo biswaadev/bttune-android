@@ -5,11 +5,10 @@ import java.util.Locale
 object VoiceCommandParser {
 
     private val WAKE_WORD_PATTERNS = listOf(
-        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*air\\s*beats?",
-        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*aerobeats?",
-        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*air\\s*beat",
-        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*air\\s*bits?",
-        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*air\\s*base"
+        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*bt\\s*tune",
+        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*bttune",
+        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*be\\s*tune",
+        "(?:hi|hey|ok|hello|hai|ay|yo)?\\s*tune"
     )
 
     private val WAKE_WORD_REGEX = Regex(
@@ -40,9 +39,9 @@ object VoiceCommandParser {
     fun containsWakeWord(text: String): Boolean {
         val trimmed = text.trim()
         return WAKE_WORD_REGEX.containsMatchIn(trimmed) ||
-                trimmed.lowercase(Locale.ROOT).contains("airbeat") ||
-                trimmed.lowercase(Locale.ROOT).contains("air beats") ||
-                trimmed.lowercase(Locale.ROOT).contains("aerobeat")
+                trimmed.lowercase(Locale.ROOT).contains("bttune") ||
+                trimmed.lowercase(Locale.ROOT).contains("bt tune") ||
+                trimmed.lowercase(Locale.ROOT).contains("betune")
     }
 
     /**

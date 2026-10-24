@@ -53,7 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.bt.bttune.ui.screens.search.airbeatsChartsItems
+import com.bt.bttune.ui.screens.search.bttuneChartsItems
 import com.bt.bttune.ui.screens.search.recentSearchesItems
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -209,7 +209,7 @@ fun MaterialSearchScreen(
                             }
                         }
                         com.bt.bttune.ui.component.SearchTab.BTTUNE_CHARTS -> {
-                            airbeatsChartsItems(
+                            bttuneChartsItems(
                                 navController = navController,
                                 viewModel = chartsViewModel
                             )

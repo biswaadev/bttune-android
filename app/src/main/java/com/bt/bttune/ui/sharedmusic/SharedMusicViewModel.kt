@@ -54,7 +54,7 @@ class SharedMusicViewModel @Inject constructor(
                     _uiState.value = when (outcome) {
                         is IdentificationOutcome.Success -> SharedMusicUiState.Success(
                             identifiedSong = outcome.song,
-                            airBeatsMatch = outcome.airBeatsMatch,
+                            btTuneMatch = outcome.btTuneMatch,
                             candidates = outcome.candidates
                         )
                         is IdentificationOutcome.NoMusicFound -> SharedMusicUiState.NoMusicFound
@@ -156,7 +156,7 @@ class SharedMusicViewModel @Inject constructor(
             val bestMatch = candidates.firstOrNull()
             _uiState.value = SharedMusicUiState.Success(
                 identifiedSong = song,
-                airBeatsMatch = bestMatch,
+                btTuneMatch = bestMatch,
                 candidates = candidates
             )
 

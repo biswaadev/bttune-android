@@ -335,7 +335,7 @@ private fun SuccessContent(
             .padding(vertical = 24.dp)
     ) {
         // Album Artwork
-        val artUrl = state.identifiedSong.albumArtUrl ?: state.airBeatsMatch?.thumbnailUrl
+        val artUrl = state.identifiedSong.albumArtUrl ?: state.btTuneMatch?.thumbnailUrl
         Card(
             shape = RoundedCornerShape(20.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
@@ -431,7 +431,7 @@ private fun SuccessContent(
         Spacer(modifier = Modifier.height(28.dp))
 
         // Play Button
-        val matchToPlay = state.airBeatsMatch ?: state.candidates.firstOrNull()
+        val matchToPlay = state.btTuneMatch ?: state.candidates.firstOrNull()
         if (matchToPlay != null) {
             Button(
                 onClick = { onPlay(matchToPlay) },

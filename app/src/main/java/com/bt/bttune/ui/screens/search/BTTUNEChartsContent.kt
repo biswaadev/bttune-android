@@ -72,11 +72,11 @@ import com.bt.bttune.viewmodels.ChartsViewModel
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-fun LazyListScope.airbeatsChartsItems(
+fun LazyListScope.bttuneChartsItems(
     navController: NavController,
     viewModel: ChartsViewModel,
 ) {
-    item(key = "airbeats_charts_core") {
+    item(key = "bttune_charts_core") {
         BTTUNEChartsEmbedView(
             navController = navController,
             viewModel = viewModel

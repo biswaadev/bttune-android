@@ -201,7 +201,7 @@ object LanTogetherClient {
         var clientMulticastLock: android.net.wifi.WifiManager.MulticastLock? = null
         runCatching {
             val wifiManager = context?.applicationContext?.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-            clientMulticastLock = wifiManager?.createMulticastLock("airbeats_lan_client_discovery")?.apply {
+            clientMulticastLock = wifiManager?.createMulticastLock("bttune_lan_client_discovery")?.apply {
                 setReferenceCounted(false)
                 acquire()
             }

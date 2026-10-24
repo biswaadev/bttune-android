@@ -10,7 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.bt.bttune.ui.component.AvatarDisplay
-import com.bt.bttune.ui.screens.search.airbeatsChartsItems
+import com.bt.bttune.ui.screens.search.bttuneChartsItems
 import com.bt.bttune.ui.screens.search.recentSearchesItems
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -1094,7 +1094,7 @@ fun AppleSearchScreen(
                     }
                 }
                 com.bt.bttune.ui.component.SearchTab.BTTUNE_CHARTS -> {
-                    airbeatsChartsItems(
+                    bttuneChartsItems(
                         navController = navController,
                         viewModel = chartsViewModel
                     )

@@ -1056,16 +1056,6 @@ fun SettingsScreen(
                         title = stringResource(R.string.community),
                         items = listOf(
                             SettingsCategoryItem(
-                                icon = painterResource(R.drawable.newspaper),
-                                title = {
-                                    Text(
-                                        "News from Developers",
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                onClick = { navController.navigate("settings/developer_news") }
-                            ),
-                            SettingsCategoryItem(
                                 icon = painterResource(R.drawable.info),
                                 title = {
                                     Text(
@@ -1074,16 +1064,6 @@ fun SettingsScreen(
                                     )
                                 },
                                 onClick = { navController.navigate("settings/about") }
-                            ),
-                            SettingsCategoryItem(
-                                icon = painterResource(R.drawable.translate), // Assuming R.drawable.translate exists. If not, I can use R.drawable.language
-                                title = {
-                                    Text(
-                                        "Help Translate",
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                onClick = { uriHandler.openUri("https://crowdin.com/project/airbeats") }
                             ),
                             SettingsCategoryItem(
                                 icon = painterResource(R.drawable.schedule),

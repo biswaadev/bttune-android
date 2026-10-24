@@ -2,7 +2,7 @@ package com.bt.bttune.charts
 
 import androidx.datastore.preferences.core.stringPreferencesKey
 
-val ChartRegionKey = stringPreferencesKey("airbeats_chart_region")
+val ChartRegionKey = stringPreferencesKey("bttune_chart_region")
 
 val ChartRegionSlugToName: Map<String, String> = mapOf(
     "system" to "System Default",

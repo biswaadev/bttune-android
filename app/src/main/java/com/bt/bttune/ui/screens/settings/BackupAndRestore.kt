@@ -234,7 +234,7 @@ fun BackupAndRestore(
                     PreferenceEntry(
                         title = { Text("Backup to Documents/BTTUNE now") },
                         icon = { Icon(painterResource(R.drawable.backup), null) },
-                        description = "Save an immediate backup file to Documents/BTTUNE/airbeats_backup.backup",
+                        description = "Save an immediate backup file to Documents/BTTUNE/bttune_backup.backup",
                         onClick = {
                             viewModel.backupToStorageNow(context) { success ->
                                 Toast.makeText(
@@ -295,7 +295,7 @@ fun BackupAndRestore(
                     onClick = {
                         val formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
                         backupCacheLauncher.launch(
-                            "BTTUNE_Cache_${LocalDateTime.now().format(formatter)}.airbeatscache"
+                            "BTTUNE_Cache_${LocalDateTime.now().format(formatter)}.bttunecache"
                         )
                     }
                 )},

@@ -154,10 +154,10 @@ class BackupRestoreViewModel @Inject constructor(
 
             val parentFile = context.filesDir.parentFile
             if (parentFile != null) {
-                val statsPrefsFile = parentFile / "shared_prefs" / "airbeats_global_stats.xml"
+                val statsPrefsFile = parentFile / "shared_prefs" / "${BTTUNEStatsCloudSync.PREFERENCES_NAME}.xml"
                 if (statsPrefsFile.exists()) {
                     statsPrefsFile.inputStream().buffered().use { inputStream ->
-                        outputStream.putNextEntry(ZipEntry("airbeats_global_stats.xml"))
+                        outputStream.putNextEntry(ZipEntry("${BTTUNEStatsCloudSync.PREFERENCES_NAME}.xml"))
                         inputStream.copyTo(outputStream)
                     }
                 } else if (!currentUid.isNullOrBlank() || !currentUserNum.isNullOrBlank()) {
@@ -166,7 +166,7 @@ class BackupRestoreViewModel @Inject constructor(
     ${if (!currentUid.isNullOrBlank()) "<string name=\"${BTTUNEStatsCloudSync.KEY_USER_ID}\">$currentUid</string>" else ""}
     ${if (!currentUserNum.isNullOrBlank()) "<string name=\"${BTTUNEStatsCloudSync.KEY_USER_NUMBER}\">$currentUserNum</string>" else ""}
 </map>""".trimIndent()
-                    outputStream.putNextEntry(ZipEntry("airbeats_global_stats.xml"))
+                    outputStream.putNextEntry(ZipEntry("${BTTUNEStatsCloudSync.PREFERENCES_NAME}.xml"))
                     outputStream.write(xmlFallback.toByteArray(Charsets.UTF_8))
                 }
 
@@ -321,7 +321,7 @@ class BackupRestoreViewModel @Inject constructor(
                         }
                     }
 
-                    "airbeats_global_stats.xml" -> {
+                    "bttune_global_stats.xml" -> {
                         val bytes = inputStream.readBytes()
                         val xmlStr = bytes.toString(Charsets.UTF_8)
                         val uidRegex = """<string name="${BTTUNEStatsCloudSync.KEY_USER_ID}">([^<]+)</string>""".toRegex()
@@ -344,7 +344,7 @@ class BackupRestoreViewModel @Inject constructor(
                         }
                         val parentFile = context.filesDir.parentFile
                         if (parentFile != null) {
-                            val destFile = parentFile / "shared_prefs" / "airbeats_global_stats.xml"
+                            val destFile = parentFile / "shared_prefs" / "${BTTUNEStatsCloudSync.PREFERENCES_NAME}.xml"
                             destFile.parentFile?.mkdirs()
                             destFile.outputStream().use { outputStream ->
                                 outputStream.write(bytes)

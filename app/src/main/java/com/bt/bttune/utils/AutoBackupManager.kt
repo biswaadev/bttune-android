@@ -47,7 +47,7 @@ import kotlin.system.exitProcess
 
 object AutoBackupManager {
 
-    const val BACKUP_FILENAME = "airbeats_backup.backup"
+    const val BACKUP_FILENAME = "bttune_backup.backup"
     private const val PREFS_NAME = "auto_backup_state"
     const val KEY_LAST_BACKUP_TIME = "last_android_os_backup_time"
     private const val KEY_LAST_RESTORED_SIG = "last_restored_sig"
@@ -99,7 +99,7 @@ object AutoBackupManager {
     const val SETTINGS_FILENAME = "settings.preferences_pb"
     const val USER_NAME_PREFS_FILENAME = "user_name_preferences.preferences_pb"
     const val GOOGLE_ACCOUNT_FILENAME = "google_account.json"
-    const val GLOBAL_STATS_FILENAME = "airbeats_global_stats.xml"
+    const val GLOBAL_STATS_FILENAME = "bttune_global_stats.xml"
     const val STATS_IDENTITY_FILENAME = "stats_identity.json"
     const val PLAYLIST_IMAGES_PREFS_FILENAME = "playlist_images.xml"
     const val PLAYLIST_IMAGES_DIR = "playlist_images"
@@ -123,7 +123,7 @@ object AutoBackupManager {
 
     fun getDeviceCloudFilePath(context: Context): String {
         val deviceId = getDeviceId(context)
-        return "airbeats/devices/$deviceId/$BACKUP_FILENAME"
+        return "bttune/devices/$deviceId/$BACKUP_FILENAME"
     }
 
     fun getAutoBackupFile(context: Context): File = File(context.filesDir, BACKUP_FILENAME)
@@ -186,7 +186,7 @@ object AutoBackupManager {
 
         // Synchronously commit relevant SharedPreferences to disk
         runCatching {
-            context.getSharedPreferences("airbeats_global_stats", Context.MODE_PRIVATE).edit().commit()
+            context.getSharedPreferences("bttune_global_stats", Context.MODE_PRIVATE).edit().commit()
             context.getSharedPreferences("playlist_images", Context.MODE_PRIVATE).edit().commit()
             context.getSharedPreferences("backup_settings", Context.MODE_PRIVATE).edit().commit()
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().commit()
@@ -353,7 +353,7 @@ object AutoBackupManager {
     }
 
     const val STORAGE_FOLDER_NAME = "BTTUNE"
-    const val STORAGE_BACKUP_FILENAME = "airbeats_backup.backup"
+    const val STORAGE_BACKUP_FILENAME = "bttune_backup.backup"
     private const val KEY_AUTO_BACKUP_STORAGE = "auto_backup_to_storage"
     private const val KEY_INITIAL_STORAGE_RESTORE_CHECKED = "initial_storage_restore_checked"
 
@@ -437,7 +437,7 @@ object AutoBackupManager {
                 if (destFile.exists()) destFile.delete()
                 tmpFile.renameTo(destFile)
 
-                // Also copy to Downloads/BTTUNE/airbeats_backup.backup for extra redundancy
+                // Also copy to Downloads/BTTUNE/bttune_backup.backup for extra redundancy
                 runCatching {
                     val dlDir = File(
                         android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
@@ -474,19 +474,19 @@ object AutoBackupManager {
     fun findStorageBackupFile(context: Context? = null): File? {
         val candidates = mutableListOf(
             getDocumentsBackupFile(),
-            File(getDocumentsBackupDir(), "airbeats_auto_backup.backup"),
+            File(getDocumentsBackupDir(), "bttune_auto_backup.backup"),
             File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
                 "$STORAGE_FOLDER_NAME/$STORAGE_BACKUP_FILENAME"
             ),
             File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-                "$STORAGE_FOLDER_NAME/airbeats_auto_backup.backup"
+                "$STORAGE_FOLDER_NAME/bttune_auto_backup.backup"
             )
         )
         context?.getExternalFilesDir(null)?.let { extDir ->
             candidates.add(File(extDir, STORAGE_BACKUP_FILENAME))
-            candidates.add(File(extDir, "airbeats_auto_backup.backup"))
+            candidates.add(File(extDir, "bttune_auto_backup.backup"))
         }
         for (f in candidates) {
             if (runCatching { f.exists() && f.length() > 0L }.getOrDefault(false)) return f
@@ -610,28 +610,28 @@ object AutoBackupManager {
     fun savePersistentExternalBackup(context: Context, sourceFile: File) {
         if (!sourceFile.exists() || sourceFile.length() == 0L) return
 
-        // 1. Try public Downloads/BTTUNE/airbeats_auto_backup.backup (survives app uninstall)
+        // 1. Try public Downloads/BTTUNE/bttune_auto_backup.backup (survives app uninstall)
         runCatching {
             val downloadsDir = File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
                 "BTTUNE"
             )
             if (!downloadsDir.exists()) downloadsDir.mkdirs()
-            val destInDownloads = File(downloadsDir, "airbeats_auto_backup.backup")
+            val destInDownloads = File(downloadsDir, "bttune_auto_backup.backup")
             sourceFile.copyTo(destInDownloads, overwrite = true)
             Timber.i("AutoBackupManager: Persistent external backup saved to Downloads (${destInDownloads.length()} bytes)")
         }.onFailure { e ->
             Timber.d("AutoBackupManager: Could not save persistent backup to Downloads: ${e.message}")
         }
 
-        // 2. Try public Documents/BTTUNE/airbeats_auto_backup.backup and airbeats_backup.backup (survives app uninstall)
+        // 2. Try public Documents/BTTUNE/bttune_auto_backup.backup and bttune_backup.backup (survives app uninstall)
         runCatching {
             val documentsDir = File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS),
                 "BTTUNE"
             )
             if (!documentsDir.exists()) documentsDir.mkdirs()
-            val destInDocs = File(documentsDir, "airbeats_auto_backup.backup")
+            val destInDocs = File(documentsDir, "bttune_auto_backup.backup")
             sourceFile.copyTo(destInDocs, overwrite = true)
             sourceFile.copyTo(File(documentsDir, STORAGE_BACKUP_FILENAME), overwrite = true)
             Timber.i("AutoBackupManager: Persistent external backup saved to Documents (${destInDocs.length()} bytes)")
@@ -653,19 +653,19 @@ object AutoBackupManager {
             return legacyFile
         }
 
-        // 3. Check public Downloads/BTTUNE/airbeats_auto_backup.backup (persistent after uninstall)
+        // 3. Check public Downloads/BTTUNE/bttune_auto_backup.backup (persistent after uninstall)
         val extDownloads = File(
             android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-            "BTTUNE/airbeats_auto_backup.backup"
+            "BTTUNE/bttune_auto_backup.backup"
         )
         if (extDownloads.exists() && extDownloads.length() > 0L) {
             return extDownloads
         }
 
-        // 4. Check public Documents/BTTUNE/airbeats_auto_backup.backup (persistent after uninstall)
+        // 4. Check public Documents/BTTUNE/bttune_auto_backup.backup (persistent after uninstall)
         val extDocs = File(
             android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS),
-            "BTTUNE/airbeats_auto_backup.backup"
+            "BTTUNE/bttune_auto_backup.backup"
         )
         if (extDocs.exists() && extDocs.length() > 0L) {
             return extDocs
@@ -1188,8 +1188,8 @@ object AutoBackupManager {
             }
 
             runCatching {
-                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "BTTUNE/airbeats_auto_backup.backup").delete()
-                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "BTTUNE/airbeats_auto_backup.backup").delete()
+                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "BTTUNE/bttune_auto_backup.backup").delete()
+                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "BTTUNE/bttune_auto_backup.backup").delete()
             }
 
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

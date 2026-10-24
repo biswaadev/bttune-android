@@ -734,7 +734,7 @@ fun CachePlaylistScreen(
                     IconButton(onClick = {
                         val formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
                         backupCacheLauncher.launch(
-                            "BTTUNE_Cache_${LocalDateTime.now().format(formatter)}.airbeatscache"
+                            "BTTUNE_Cache_${LocalDateTime.now().format(formatter)}.bttunecache"
                         )
                     }) {
                         Icon(

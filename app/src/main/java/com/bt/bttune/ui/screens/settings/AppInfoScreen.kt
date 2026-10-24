@@ -1549,14 +1549,7 @@ private fun CommunityHubCard(
                 onClick = { onOpenUrl(telegramUrl) }
             )
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
 
-            CommunityLinkItem(
-                icon = painterResource(R.drawable.globe_search),
-                title = "community.airbeats.org",
-                subtitle = "Official web community forum & documentation",
-                onClick = { onOpenUrl("https://community.airbeats.org") }
-            )
         }
     }
 }

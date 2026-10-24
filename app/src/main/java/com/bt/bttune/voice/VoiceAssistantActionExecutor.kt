@@ -106,7 +106,7 @@ class VoiceAssistantActionExecutor(
         scope.launch {
             val ttsEnabled = context.dataStore.get(VoiceAssistantTtsFeedbackKey, true)
             if (ttsEnabled && isTtsReady && tts != null) {
-                val utteranceId = "airbeats_feedback_${System.currentTimeMillis()}"
+                val utteranceId = "bttune_feedback_${System.currentTimeMillis()}"
                 onTtsSpeakingChanged?.invoke(true)
                 tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
             }

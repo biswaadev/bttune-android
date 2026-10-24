@@ -30,7 +30,7 @@ data class AppRemoteConfig(
 )
 
 object RemoteConfigManager {
-    private const val PREFS_NAME = "airbeats_remote_config_cache"
+    private const val PREFS_NAME = "bttune_remote_config_cache"
     private const val KEY_PLAY_DOMAIN = "play_domain"
     private const val KEY_STATS_BASE_URL = "stats_base_url"
     private const val KEY_LISTEN_TOGETHER_URL = "listen_together_url"

@@ -274,7 +274,7 @@ fun ChartsScreen(
                             ),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            item(key = "airbeats_embed") {
+                            item(key = "bttune_embed") {
                                 BTTUNEChartsEmbedView(
                                     navController = navController,
                                     viewModel = viewModel

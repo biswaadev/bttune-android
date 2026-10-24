@@ -84,7 +84,7 @@ constructor(
 
     private val cloudClient = BTTUNEStatsCloudClient()
     private val statsPreferences =
-        context.getSharedPreferences("airbeats_global_stats", Context.MODE_PRIVATE)
+        context.getSharedPreferences("bttune_global_stats", Context.MODE_PRIVATE)
 
     val mostPlayedSongsStats =
         combine(

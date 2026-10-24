@@ -21,7 +21,7 @@ import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
 object DeveloperNewsManager {
-    private const val PREFS_NAME = "airbeats_developer_news"
+    private const val PREFS_NAME = "bttune_developer_news"
     private const val KEY_CACHED_NEWS = "cached_news_json"
     private const val KEY_DISMISSED_POPUPS = "dismissed_popup_ids"
 
@@ -72,8 +72,8 @@ object DeveloperNewsManager {
         try {
             val app = runCatching { FirebaseApp.getInstance() }.getOrNull() ?: return@withContext
             val options = app.options
-            val projectId = options.projectId?.takeIf { it.isNotBlank() } ?: "airbeats-54c06"
-            val baseUrl = (options.databaseUrl?.takeIf { it.isNotBlank() } ?: "https://$projectId-default-rtdb.firebaseio.com").trimEnd('/')
+            val projectId = options.projectId?.takeIf { it.isNotBlank() && it.contains("bttune", ignoreCase = true) } ?: return@withContext
+            val baseUrl = (options.databaseUrl?.takeIf { it.isNotBlank() && it.contains("bttune", ignoreCase = true) } ?: "https://$projectId-default-rtdb.firebaseio.com").trimEnd('/')
 
             val directUrl = "$baseUrl/developer_news.json"
             Timber.d("DeveloperNewsManager: Fetching news from $directUrl")
