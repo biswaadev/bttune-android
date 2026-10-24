@@ -35,6 +35,7 @@ android {
         applicationId = "com.bt.bttune"
         minSdk = 26
         targetSdk = 35
+        resConfigs("en")
         versionCode = 173
         versionName = "6.0.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -73,7 +74,7 @@ android {
             buildConfigField("boolean", "IS_NIGHTLY", "false")
             isMinifyEnabled = true
             isShrinkResources = true
-            isCrunchPngs = false
+            isCrunchPngs = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
