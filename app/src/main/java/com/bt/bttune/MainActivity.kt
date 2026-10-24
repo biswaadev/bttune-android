@@ -557,7 +557,10 @@ class MainActivity : FragmentActivity() {
                     latestVersionName = info.versionName
                     if (info.versionName.isNotBlank() && com.bt.bttune.utils.VersionUtils.isVersionGreater(info.versionName, BuildConfig.VERSION_NAME)) {
                         updateInfoState = info
+                        Updater.showUpdateAvailableNotification(this@MainActivity, info)
                     }
+                }.onFailure { err ->
+                    timber.log.Timber.e(err, "Failed to check for updates on startup")
                 }
             }
 
@@ -2223,31 +2226,11 @@ private fun openNotificationSettings(context: Context) {
 }
 
 suspend fun checkForUpdates(): String? = withContext(Dispatchers.IO) {
-    try {
-        val url = URL(com.bt.bttune.utils.RemoteConfigManager.getLatestReleaseApiUrl(isNightly = false))
-        val connection = url.openConnection()
-        connection.connect()
-        val json = connection.getInputStream().bufferedReader().use { it.readText() }
-        val jsonObject = JSONObject(json)
-        return@withContext jsonObject.getString("tag_name")
-    } catch (e: Exception) {
-        e.printStackTrace()
-        return@withContext null
-    }
+    Updater.getLatestUpdateInfo().map { it.versionName }.getOrNull()
 }
 
-fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean {
-    val remote = remoteVersion.removePrefix("v").split(".").map { it.toIntOrNull() ?: 0 }
-    val current = currentVersion.removePrefix("v").split(".").map { it.toIntOrNull() ?: 0 }
-
-    for (i in 0 until maxOf(remote.size, current.size)) {
-        val r = remote.getOrNull(i) ?: 0
-        val c = current.getOrNull(i) ?: 0
-        if (r > c) return true
-        if (r < c) return false
-    }
-    return false
-}
+fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean =
+    com.bt.bttune.utils.VersionUtils.isVersionGreater(remoteVersion, currentVersion)
 
 @Composable
 fun ProfileIconWithUpdateBadge(

@@ -2,20 +2,25 @@ package com.bt.bttune.utils
 
 object VersionUtils {
     /**
-     * Returns true if [version1] is greater than [version2].
-     * Expects standard semantic version strings like "6.0.0", "6.0.10", etc.
+     * Returns true if [remoteVersion] is strictly greater than [currentVersion].
+     * Safely handles "v6.0.5", "6.0.5", "v6.0.5-release", "6.0.10", etc.
      */
-    fun isVersionGreater(version1: String, version2: String): Boolean {
-        val parts1 = version1.split(".").map { it.toIntOrNull() ?: 0 }
-        val parts2 = version2.split(".").map { it.toIntOrNull() ?: 0 }
-        
-        val maxLen = maxOf(parts1.size, parts2.size)
+    fun isVersionGreater(remoteVersion: String, currentVersion: String): Boolean {
+        if (remoteVersion.isBlank() || currentVersion.isBlank()) return false
+
+        val cleanRemote = remoteVersion.trim().removePrefix("v").removePrefix("V").substringBefore("-")
+        val cleanCurrent = currentVersion.trim().removePrefix("v").removePrefix("V").substringBefore("-")
+
+        val partsRemote = cleanRemote.split(".").map { it.filter { ch -> ch.isDigit() }.toIntOrNull() ?: 0 }
+        val partsCurrent = cleanCurrent.split(".").map { it.filter { ch -> ch.isDigit() }.toIntOrNull() ?: 0 }
+
+        val maxLen = maxOf(partsRemote.size, partsCurrent.size)
         for (i in 0 until maxLen) {
-            val p1 = parts1.getOrElse(i) { 0 }
-            val p2 = parts2.getOrElse(i) { 0 }
-            if (p1 > p2) return true
-            if (p1 < p2) return false
+            val r = partsRemote.getOrElse(i) { 0 }
+            val c = partsCurrent.getOrElse(i) { 0 }
+            if (r > c) return true
+            if (r < c) return false
         }
-        return false // versions are equal
+        return false
     }
 }

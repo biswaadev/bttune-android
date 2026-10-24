@@ -113,6 +113,7 @@ class AppUpdateService : Service() {
                 connectTimeout = 20_000
                 readTimeout = 30_000
                 setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream")
+                setRequestProperty("User-Agent", "BTTUNE-App/${com.bt.bttune.BuildConfig.VERSION_NAME}")
             }
             connection.connect()
             val code = connection.responseCode

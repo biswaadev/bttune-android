@@ -772,56 +772,11 @@ enum class DownloadStatus {
 }
 
 suspend fun checkForUpdates(): String? = withContext(Dispatchers.IO) {
-    try {
-        if (com.bt.bttune.BuildConfig.IS_NIGHTLY) {
-            val url = java.net.URL(com.bt.bttune.utils.RemoteConfigManager.getLatestReleaseApiUrl(isNightly = true))
-            val connection = url.openConnection()
-            connection.connect()
-            val json = connection.getInputStream().bufferedReader().use { it.readText() }
-            val jsonArray = org.json.JSONArray(json)
-            for (i in 0 until jsonArray.length()) {
-                val release = jsonArray.getJSONObject(i)
-                if (release.getBoolean("prerelease")) {
-                    val tagName = release.getString("tag_name")
-                    return@withContext tagName.removePrefix("v").removeSuffix("-nightly").trim()
-                }
-            }
-            return@withContext null
-        } else {
-            val url = java.net.URL(com.bt.bttune.utils.RemoteConfigManager.getLatestReleaseApiUrl(isNightly = false))
-            val connection = url.openConnection()
-            connection.connect()
-            val json = connection.getInputStream().bufferedReader().use { it.readText() }
-            val jsonObject = org.json.JSONObject(json)
-            val tagName = jsonObject.getString("tag_name")
-            return@withContext tagName.removePrefix("v").trim()
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-        return@withContext null
-    }
+    com.bt.bttune.utils.Updater.getLatestUpdateInfo().map { it.versionName }.getOrNull()
 }
 
-fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean {
-    fun normalize(version: String): List<Int> {
-        return version
-            .replace(Regex("[^0-9.]"), "")
-            .split(".")
-            .map { it.toIntOrNull() ?: 0 }
-    }
-
-    val remote = normalize(remoteVersion)
-    val current = normalize(currentVersion)
-
-    for (i in 0 until maxOf(remote.size, current.size)) {
-        val r = remote.getOrNull(i) ?: 0
-        val c = current.getOrNull(i) ?: 0
-        if (r > c) return true
-        if (r < c) return false
-    }
-
-    return false
-}
+fun isNewerVersion(remoteVersion: String, currentVersion: String): Boolean =
+    com.bt.bttune.utils.VersionUtils.isVersionGreater(remoteVersion, currentVersion)
 
 // ==================== MAIN SETTINGS SCREEN ====================
 @OptIn(ExperimentalMaterial3Api::class)

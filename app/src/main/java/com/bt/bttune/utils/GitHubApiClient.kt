@@ -70,7 +70,15 @@ data class GitHubCommitWrap(
 
 class GitHubApiClient {
 
-    private val client = OkHttpClient.Builder().build()
+    private val client = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "BTTUNE-App/${com.bt.bttune.BuildConfig.VERSION_NAME}")
+                .header("Accept", "application/vnd.github.v3+json")
+                .build()
+            chain.proceed(request)
+        }
+        .build()
     private val json = Json { ignoreUnknownKeys = true }
     private val baseUrl = "https://api.github.com"
 

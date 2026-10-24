@@ -409,7 +409,7 @@ object RemoteConfigManager {
         return if (isNightly) {
             "https://github.com/$repo/releases/download/v${versionName}-nightly/BTTUNE-v${versionName}-Nightly.apk"
         } else {
-            "https://github.com/$repo/releases/download/v$versionName/BTTUNE_v${versionName}_signed.apk"
+            "https://github.com/$repo/releases/download/v$versionName/BTTUNE-release.apk"
         }
     }
 

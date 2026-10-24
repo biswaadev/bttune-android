@@ -40,7 +40,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     private fun showNotification(title: String, message: String) {
 
-        val channelId = "airbeats_channel"
+        val channelId = "bttune_channel"
         val channelName = "BTTUNE Notifications"
 
         val notificationManager =
