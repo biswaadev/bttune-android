@@ -48,7 +48,7 @@ object RemoteConfigManager {
     val DEFAULT_WEBSITE_URL: String = ""
     val DEFAULT_GITHUB_REPO: String = "biswaadev/bttune-android"
     val DEFAULT_UPDATE_API_URL: String = ""
-    val DEFAULT_CRASH_WEBHOOK_URL: String = "https://airbeats-telegram-bot.darkxvenom44.workers.dev/crash"
+    val DEFAULT_CRASH_WEBHOOK_URL: String = ""
     val DEFAULT_TELEGRAM_URL: String = "https://t.me/+vg3N1iU5x0ZmOTc9"
 
     @Volatile
