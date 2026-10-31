@@ -1,0 +1,89 @@
+name: Build & Release BTTUNE APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --build-cache --parallel --no-daemon
+
+      - name: Prepare Clean Release APKs
+        id: version_step
+        run: |
+          mkdir -p release-output
+          
+          # 1. Primary Universal APK (Works on 100% of Android devices: arm64-v8a, armeabi-v7a, x86, x86_64)
+          if ls app/build/outputs/apk/release/*universal*.apk 1> /dev/null 2>&1; then
+            cp app/build/outputs/apk/release/*universal*.apk release-output/BTTUNE-release.apk
+          elif ls app/build/outputs/apk/release/*arm64-v8a*.apk 1> /dev/null 2>&1; then
+            cp app/build/outputs/apk/release/*arm64-v8a*.apk release-output/BTTUNE-release.apk
+          else
+            cp app/build/outputs/apk/release/*.apk release-output/BTTUNE-release.apk
+          fi
+
+          # 2. Also copy architecture-specific APKs if generated so users can choose
+          if ls app/build/outputs/apk/release/*arm64-v8a*.apk 1> /dev/null 2>&1; then
+            cp app/build/outputs/apk/release/*arm64-v8a*.apk release-output/BTTUNE-arm64-v8a.apk
+          fi
+          if ls app/build/outputs/apk/release/*armeabi-v7a*.apk 1> /dev/null 2>&1; then
+            cp app/build/outputs/apk/release/*armeabi-v7a*.apk release-output/BTTUNE-armeabi-v7a.apk
+          fi
+          
+          ls -lh release-output/
+          
+          VERSION_NAME=$(grep 'versionName =' app/build.gradle.kts | head -n 1 | cut -d'"' -f2)
+          echo "VERSION_TAG=v${VERSION_NAME}" >> $GITHUB_OUTPUT
+          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Upload BTTUNE APK (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTTUNE-release-apk
+          path: release-output/*.apk
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: ${{ steps.version_step.outputs.VERSION_TAG }}
+          name: "BTTUNE ${{ steps.version_step.outputs.VERSION_NAME }}"
+          body: |
+            ### ◈ BTTUNE - High Performance Music Streaming
+            
+            - **Universal Release (`BTTUNE-release.apk`)**: Compatible with 100% of Android devices (ARM64, ARMv7, 32-bit & 64-bit).
+            - **ARM64 Architecture (`BTTUNE-arm64-v8a.apk`)**: Optimized for 64-bit modern devices.
+            - **ARMv7 Architecture (`BTTUNE-armeabi-v7a.apk`)**: Optimized for 32-bit older Android devices.
+          draft: false
+          prerelease: false
+          files: release-output/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

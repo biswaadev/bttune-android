@@ -1,0 +1,107 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background Circle -->
+    <path
+        android:pathData="M54,10 A44,44 0 1 1 53.9,10 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="10"
+                android:startY="10"
+                android:endX="98"
+                android:endY="98"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF1A1B20" />
+                <item android:offset="1.0" android:color="#FF0D0E11" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Outer Neon Glow Ring -->
+    <path
+        android:pathData="M54,14 A40,40 0 1 1 53.9,14 Z"
+        android:strokeWidth="2.5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="14"
+                android:startY="14"
+                android:endX="94"
+                android:endY="94"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFFF2A6D" />
+                <item android:offset="0.5" android:color="#FF9B51E0" />
+                <item android:offset="1.0" android:color="#FF05D9E8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Letter 'B' Modern Stylized Geometry -->
+    <!-- Left vertical spine of B -->
+    <path
+        android:pathData="M34,30 L45,30 A12,12 0 0 1 57,42 A12,12 0 0 1 45,54 L34,54 Z"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="34"
+                android:startY="30"
+                android:endX="57"
+                android:endY="54"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFFF2A6D" />
+                <item android:offset="1.0" android:color="#FF9B51E0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Bottom loop of B -->
+    <path
+        android:pathData="M34,54 L47,54 A14,14 0 0 1 61,68 A14,14 0 0 1 47,82 L34,82 Z"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="34"
+                android:startY="54"
+                android:endX="61"
+                android:endY="82"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF9B51E0" />
+                <item android:offset="1.0" android:color="#FF05D9E8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Stylized 'T' & Audio Equalizer overlay -->
+    <!-- Top bar of T extending into equalizer waves -->
+    <path
+        android:pathData="M52,36 L78,36"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeColor="#FF05D9E8" />
+
+    <path
+        android:pathData="M65,36 L65,76"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeColor="#FF05D9E8" />
+
+    <!-- Music Equalizer Beats Bars on Right -->
+    <path
+        android:pathData="M73,46 L73,66"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeColor="#FFFF2A6D" />
+
+    <path
+        android:pathData="M80,52 L80,62"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeColor="#FF9B51E0" />
+</vector>

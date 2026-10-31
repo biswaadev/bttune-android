@@ -1,0 +1,81 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Minimalist Smooth Dark Glass Background -->
+    <path
+        android:pathData="M54,16 A38,38 0 1 1 53.9,16 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="16"
+                android:startY="16"
+                android:endX="92"
+                android:endY="92"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF1E1B2E" />
+                <item android:offset="1.0" android:color="#FF0D0C14" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Subtle Minimal Border Ring -->
+    <path
+        android:pathData="M54,16 A38,38 0 1 1 53.9,16 Z"
+        android:strokeWidth="1.5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="16"
+                android:startY="16"
+                android:endX="92"
+                android:endY="92"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#4DFFFFFF" />
+                <item android:offset="0.5" android:color="#1AFFFFFF" />
+                <item android:offset="1.0" android:color="#33BA68C8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Clean Minimalist Geometric Music Symbol (Flowing Note + Stream Wave) -->
+    <!-- Minimalist Music Note Stem -->
+    <path
+        android:pathData="M60,34 L60,65 A11,11 0 1 1 49,54 C52,54 56,56 60,59 Z"
+        android:strokeWidth="0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="38"
+                android:startY="34"
+                android:endX="66"
+                android:endY="76"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFBA68C8" />
+                <item android:offset="0.5" android:color="#FF9C27B0" />
+                <item android:offset="1.0" android:color="#FFE040FB" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Modern Minimalist Flag Beam -->
+    <path
+        android:pathData="M60,34 C68,34 76,38 78,46 C74,42 67,41 60,42 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="60"
+                android:startY="34"
+                android:endX="78"
+                android:endY="46"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFE040FB" />
+                <item android:offset="1.0" android:color="#FFBA68C8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Minimal Pulse Accent Dot -->
+    <path
+        android:pathData="M43,65 A4,4 0 1 1 42.9,65 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

@@ -1,0 +1,75 @@
+package com.bt.bttune.viewmodels
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.bt.bttune.db.MusicDatabase
+import com.bt.bttune.db.entities.LyricsEntity
+import com.bt.bttune.lyrics.LyricsHelper
+import com.bt.bttune.lyrics.LyricsResult
+import com.bt.bttune.models.MediaMetadata
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import javax.inject.Inject
+
+@HiltViewModel
+class LyricsMenuViewModel
+@Inject
+constructor(
+    private val lyricsHelper: LyricsHelper,
+    val database: MusicDatabase,
+) : ViewModel() {
+    private var job: Job? = null
+    val results = MutableStateFlow(emptyList<LyricsResult>())
+    val isLoading = MutableStateFlow(false)
+
+    fun search(
+        mediaId: String,
+        title: String,
+        artist: String,
+        duration: Int,
+    ) {
+        isLoading.value = true
+        results.value = emptyList()
+        job?.cancel()
+        job =
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    lyricsHelper.getAllLyrics(mediaId, title, artist, duration) { result ->
+                        results.update {
+                            it + result
+                        }
+                    }
+                } catch (e: Exception) {
+                    com.bt.bttune.utils.reportException(e)
+                } finally {
+                    isLoading.value = false
+                }
+            }
+    }
+
+    fun cancelSearch() {
+        job?.cancel()
+        job = null
+    }
+
+    fun refetchLyrics(
+        mediaMetadata: MediaMetadata,
+        lyricsEntity: LyricsEntity?,
+    ) {
+        database.query {
+            lyricsEntity?.let(::delete)
+            val lyrics =
+                runBlocking {
+                    runCatching {
+                        lyricsHelper.getLyrics(mediaMetadata)
+                    }.getOrDefault(LyricsEntity.LYRICS_NOT_FOUND)
+                }
+            upsert(LyricsEntity(mediaMetadata.id, lyrics))
+        }
+    }
+}

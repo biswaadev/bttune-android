@@ -1,0 +1,60 @@
+/*
+ * BTTUNE Project Original (2026)
+ * Licensed Under GPL-3.0 | see git history for contributors
+ */
+
+package com.bt.bttune.innertube.models.response
+
+import com.bt.bttune.innertube.models.AccountInfo
+import com.bt.bttune.innertube.models.Runs
+import com.bt.bttune.innertube.models.Thumbnails
+import com.bt.bttune.innertube.models.Thumbnail
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class AccountMenuResponse(
+    val actions: List<Action>? = null,
+) {
+    @Serializable
+    data class Action(
+        val openPopupAction: OpenPopupAction? = null,
+    ) {
+        @Serializable
+        data class OpenPopupAction(
+            val popup: Popup? = null,
+        ) {
+            @Serializable
+            data class Popup(
+                val multiPageMenuRenderer: MultiPageMenuRenderer? = null,
+            ) {
+                @Serializable
+                data class MultiPageMenuRenderer(
+                    val header: Header? = null,
+                ) {
+                    @Serializable
+                    data class Header(
+                        val activeAccountHeaderRenderer: ActiveAccountHeaderRenderer? = null,
+                    ) {
+                        @Serializable
+                        data class ActiveAccountHeaderRenderer(
+                            val accountName: Runs? = null,
+                            val email: Runs? = null,
+                            val channelHandle: Runs? = null,
+                            val accountPhoto: Thumbnails? = null,
+                        ) {
+                            fun toAccountInfo(): AccountInfo? {
+                                val name = accountName?.runs?.firstOrNull()?.text ?: return null
+                                return AccountInfo(
+                                    name = name,
+                                    email = email?.runs?.firstOrNull()?.text,
+                                    channelHandle = channelHandle?.runs?.firstOrNull()?.text,
+                                    thumbnailUrl = accountPhoto?.thumbnails?.lastOrNull()?.normalizedUrl,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

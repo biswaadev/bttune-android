@@ -1,0 +1,287 @@
+package com.bt.bttune.ui.component
+
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.ShapeDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.media3.exoplayer.offline.Download
+import com.bt.bttune.R
+import com.bt.bttune.constants.AudioQuality
+import com.bt.bttune.constants.DownloadQualityKey
+import com.bt.bttune.utils.dataStore
+import com.bt.bttune.utils.dataStoreCache
+import com.bt.bttune.utils.get
+import com.bt.bttune.utils.makeTimeString
+import androidx.datastore.preferences.core.edit
+import kotlinx.coroutines.launch
+
+val GridMenuItemHeight = 108.dp
+
+@Composable
+fun GridMenu(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    content: LazyGridScope.() -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 120.dp),
+        modifier = modifier,
+        contentPadding = contentPadding,
+        content = content
+    )
+}
+
+fun LazyGridScope.GridMenuItem(
+    modifier: Modifier = Modifier,
+    @DrawableRes icon: Int,
+    tint: @Composable () -> Color = { LocalContentColor.current },
+    @StringRes title: Int,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) = GridMenuItem(
+    modifier = modifier,
+    icon = {
+        Icon(
+            painter = painterResource(icon),
+            tint = tint(),
+            contentDescription = null
+        )
+    },
+    title = title,
+    enabled = enabled,
+    onClick = onClick
+)
+
+fun LazyGridScope.GridMenuItem(
+    modifier: Modifier = Modifier,
+    icon: @Composable BoxScope.() -> Unit,
+    @StringRes title: Int,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    item {
+        Column(
+            modifier = modifier
+                .clip(ShapeDefaults.Large)
+                .height(GridMenuItemHeight)
+                .clickable(
+                    enabled = enabled,
+                    onClick = onClick
+                )
+                .alpha(if (enabled) 1f else 0.5f)
+                .padding(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+                content = icon
+            )
+            Text(
+                text = stringResource(title),
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(with(LocalDensity.current) {
+                        MaterialTheme.typography.labelLarge.lineHeight.toDp() * 2
+                    })
+            )
+        }
+    }
+}
+
+
+fun LazyGridScope.DownloadGridMenu(
+    @Download.State state: Int?,
+    onRemoveDownload: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    when (state) {
+        Download.STATE_COMPLETED -> {
+            GridMenuItem(
+                icon = R.drawable.offline,
+                title = R.string.remove_download,
+                onClick = onRemoveDownload
+            )
+        }
+
+        Download.STATE_QUEUED, Download.STATE_DOWNLOADING -> {
+            GridMenuItem(
+                icon = {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                },
+                title = R.string.downloading,
+                onClick = onRemoveDownload
+            )
+        }
+
+        else -> {
+            item { DownloadQualityGridMenuItem(onDownload) }
+        }
+    }
+}
+
+@Composable
+private fun DownloadQualityGridMenuItem(onDownload: () -> Unit) {
+    var showQualityDialog by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .clip(ShapeDefaults.Large)
+            .height(GridMenuItemHeight)
+            .clickable { showQualityDialog = true }
+            .padding(12.dp),
+    ) {
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.download), contentDescription = null)
+        }
+        Text(
+            text = stringResource(R.string.download),
+            style = MaterialTheme.typography.labelLarge,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    if (showQualityDialog) {
+        DownloadQualityDialog(
+            onDismiss = { showQualityDialog = false },
+            onQualitySelected = {
+                showQualityDialog = false
+                onDownload()
+            },
+        )
+    }
+}
+
+/** Selects the actual source bitrate before a cache or local download begins. */
+@Composable
+fun DownloadQualityDialog(
+    onDismiss: () -> Unit,
+    onQualitySelected: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selected by remember {
+        mutableStateOf(
+            context.dataStore[DownloadQualityKey]
+                ?.let { runCatching { AudioQuality.valueOf(it) }.getOrNull() }
+                ?: AudioQuality.HIGH,
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download quality") },
+        text = {
+            Column {
+                listOf(
+                    AudioQuality.LOW to "Low · saves the most space",
+                    AudioQuality.MEDIUM to "Medium · balanced",
+                    AudioQuality.HIGH to "High · best available audio",
+                ).forEach { (quality, label) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { selected = quality },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selected == quality, onClick = { selected = quality })
+                        Text(label)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                dataStoreCache[DownloadQualityKey.name] = selected.name
+                scope.launch {
+                    context.dataStore.edit { it[DownloadQualityKey] = selected.name }
+                    onQualitySelected()
+                }
+            }) { Text("Download") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+fun LazyGridScope.SleepTimerGridMenu(
+    modifier: Modifier = Modifier,
+    sleepTimerTimeLeft: Long,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    item {
+        Column(
+            modifier = modifier
+                .clip(ShapeDefaults.Large)
+                .height(GridMenuItemHeight)
+                .clickable(
+                    onClick = onClick
+                )
+                .padding(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+                content = {
+                    Icon(
+                        painterResource(R.drawable.bedtime),
+                        contentDescription = null,
+                        modifier = Modifier.alpha(if (enabled) 1f else 0.5f)
+                    )
+                }
+            )
+            Text(
+                text = if (enabled) makeTimeString(sleepTimerTimeLeft) else stringResource(
+                    id = R.string.sleep_timer
+                ),
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}

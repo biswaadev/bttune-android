@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="128" height="128">
+  <defs>
+    <!-- Dark Glass Background Gradient -->
+    <linearGradient id="bgGrad" x1="16" y1="16" x2="92" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E1B2E" />
+      <stop offset="100%" stop-color="#0D0C14" />
+    </linearGradient>
+
+    <!-- Subtle Border Ring Gradient -->
+    <linearGradient id="borderGrad" x1="16" y1="16" x2="92" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.3" />
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#BA68C8" stop-opacity="0.3" />
+    </linearGradient>
+
+    <!-- Vibrant Purple-Pink Music Note Gradient -->
+    <linearGradient id="noteGrad" x1="38" y1="34" x2="66" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#BA68C8" />
+      <stop offset="50%" stop-color="#9C27B0" />
+      <stop offset="100%" stop-color="#E040FB" />
+    </linearGradient>
+
+    <!-- Flag Beam Gradient -->
+    <linearGradient id="flagGrad" x1="60" y1="34" x2="78" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E040FB" />
+      <stop offset="100%" stop-color="#BA68C8" />
+    </linearGradient>
+  </defs>
+
+  <!-- Circular Outer Frame with Glass Gradient -->
+  <circle cx="54" cy="54" r="38" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="1.5" />
+
+  <!-- Flowing Music Note Body & Stem -->
+  <path d="M60,34 L60,65 A11,11 0 1 1 49,54 C52,54 56,56 60,59 Z" fill="url(#noteGrad)" />
+
+  <!-- Flowing Note Flag / Beam -->
+  <path d="M60,34 C68,34 76,38 78,46 C74,42 67,41 60,42 Z" fill="url(#flagGrad)" />
+
+  <!-- Pulse Accent Dot -->
+  <circle cx="43" cy="65" r="4" fill="#FFFFFF" opacity="0.95" />
+</svg>
